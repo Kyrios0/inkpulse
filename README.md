@@ -55,12 +55,28 @@ Codex credentials, brokerage credentials, or general access to the PC.
 
 - `GET /api/v1/display/manifest` — page versions and image metadata
 - `GET /api/v1/display/pages/:pageId.png` — rendered four-level grayscale page
-- `PUT /api/v1/metrics/codex` — PC collector upload using a separate write token
 - `GET /health` — process health for deployment checks
+- `PUT /api/v1/metrics/codex` — planned PC collector upload using a separate
+  write token
 
 The display protocol is specified in [docs/display-protocol.md](docs/display-protocol.md).
 The component design and failure behavior are described in
 [docs/architecture.md](docs/architecture.md).
+Deployment and rollback are documented in [docs/deployment.md](docs/deployment.md).
+
+## Local development
+
+```sh
+npm install
+npm test
+npm run render:mock
+npm start
+```
+
+`npm test` builds the TypeScript project and verifies image dimensions,
+four-level grayscale output, display authorization, manifest ordering, and HTTP
+cache revalidation. `npm run render:mock` writes preview images to
+`output/mock/`; generated output is gitignored.
 
 ## Delivery stages
 

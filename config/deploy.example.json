@@ -4,5 +4,6 @@
   "servicePath": "/home/inkpulse/services/inkpulse",
   "listenHost": "127.0.0.1",
   "listenPort": 3810,
-  "publicBaseUrl": "https://display.example.com"
+  "publicBaseUrl": "https://display.example.com",
+  "wslDistribution": "Ubuntu"
 }

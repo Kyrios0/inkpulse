@@ -1,0 +1,29 @@
+{
+  "name": "inkpulse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "prebuild": "npm run clean",
+    "build": "tsc -p tsconfig.json",
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:bootstrap": "node scripts/deploy.mjs --bootstrap-runtime",
+    "deploy:dry-run": "node scripts/deploy.mjs --dry-run",
+    "dev": "npm run build && node --watch dist/apps/server/src/index.js",
+    "render:mock": "npm run build --silent && node dist/apps/server/src/render-cli.js",
+    "start": "node dist/apps/server/src/index.js",
+    "pretest": "npm run build",
+    "test": "node --test dist/apps/server/test/server.test.js"
+  },
+  "dependencies": {
+    "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  }
+}
