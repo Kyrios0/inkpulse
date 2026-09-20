@@ -1,0 +1,20 @@
+# Local deployment configuration
+config/deploy.local.json
+
+# Local environment and runtime secrets
+.env
+.env.*
+!.env.example
+
+# Generated data and rendered pages
+data/
+output/
+
+# Node.js
+node_modules/
+coverage/
+dist/
+
+# Local editor and OS files
+.DS_Store
+Thumbs.db
