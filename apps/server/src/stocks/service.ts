@@ -1,0 +1,85 @@
+import type { StockQuote, StockSourceStatus } from "../data.js";
+import { StockCache, type StockCacheSnapshot } from "./cache.js";
+import { fetchQuotesSequentially, type StockProvider } from "./provider.js";
+
+export interface StockState {
+  quotes: StockQuote[];
+  source: StockSourceStatus;
+  failures: Array<{ symbol: string; message: string }>;
+}
+
+export class StockService {
+  private snapshot: StockCacheSnapshot | undefined;
+
+  constructor(
+    private readonly provider: StockProvider,
+    private readonly cache: StockCache,
+    private readonly symbols: string[],
+    private readonly staleAfterMilliseconds: number,
+  ) {}
+
+  async load(): Promise<StockState | undefined> {
+    this.snapshot = await this.cache.load();
+    if (!this.snapshot) return undefined;
+
+    return this.toState(
+      Date.now() - Date.parse(this.snapshot.fetchedAt) > this.staleAfterMilliseconds,
+      [],
+    );
+  }
+
+  async refresh(signal?: AbortSignal): Promise<StockState> {
+    const result = await fetchQuotesSequentially(this.provider, this.symbols, signal);
+    if (result.quotes.length === 0) {
+      if (this.snapshot) return this.toState(true, result.failures);
+      throw new AggregateError(
+        result.failures.map(
+          (failure) => new Error(`${failure.symbol}: ${failure.message}`),
+        ),
+        "All stock quote requests failed",
+      );
+    }
+
+    const previousQuotes = new Map(
+      this.snapshot?.quotes.map((quote) => [quote.symbol, quote]) ?? [],
+    );
+    const refreshedQuotes = new Map(
+      result.quotes.map((quote) => [quote.symbol, quote]),
+    );
+    const quotes = this.symbols.flatMap((symbol) => {
+      const quote = refreshedQuotes.get(symbol) ?? previousQuotes.get(symbol);
+      return quote ? [quote] : [];
+    });
+
+    this.snapshot = {
+      schemaVersion: 1,
+      provider: this.provider.name,
+      fetchedAt: new Date().toISOString(),
+      quotes,
+    };
+    await this.cache.save(this.snapshot);
+    return this.toState(result.failures.length > 0, result.failures);
+  }
+
+  private toState(
+    stale: boolean,
+    failures: StockState["failures"],
+  ): StockState {
+    if (!this.snapshot) throw new Error("Stock cache is not initialized");
+    const selectedQuotes = new Map(
+      this.snapshot.quotes.map((quote) => [quote.symbol, quote]),
+    );
+    return {
+      quotes: this.symbols.flatMap((symbol) => {
+        const quote = selectedQuotes.get(symbol);
+        return quote ? [quote] : [];
+      }),
+      source: {
+        provider: this.snapshot.provider,
+        fetchedAt: this.snapshot.fetchedAt,
+        stale,
+      },
+      failures,
+    };
+  }
+}

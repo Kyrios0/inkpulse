@@ -62,6 +62,8 @@ Codex credentials, brokerage credentials, or general access to the PC.
 The display protocol is specified in [docs/display-protocol.md](docs/display-protocol.md).
 The component design and failure behavior are described in
 [docs/architecture.md](docs/architecture.md).
+The E1001 refresh-cadence experiment is tracked in
+[docs/battery-life.md](docs/battery-life.md).
 Deployment and rollback are documented in [docs/deployment.md](docs/deployment.md).
 
 ## Local development
@@ -78,6 +80,14 @@ four-level grayscale output, display authorization, manifest ordering, and HTTP
 cache revalidation. `npm run render:mock` writes preview images to
 `output/mock/`; generated output is gitignored.
 
+## Stock data
+
+The initial keyless adapter requests five-minute US quote charts from Yahoo and
+stores the last successful normalized snapshot on disk. Symbols and refresh
+frequency are environment settings. Provider failures preserve cached quotes
+and visibly mark the Stocks page stale; the display is informational and not a
+trading data source.
+
 ## Delivery stages
 
 1. Build a mock-data server and render all three pages at 800 x 480.
@@ -85,3 +95,4 @@ cache revalidation. `npm run render:mock` writes preview images to
 3. Add a replaceable US-stock provider adapter and server-side cache.
 4. Deploy the service under an unprivileged account on the configured host.
 5. Implement and test E1001 firmware when the hardware arrives.
+6. Add optional VPS health metrics after the core display flow is stable.

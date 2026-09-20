@@ -28,7 +28,10 @@ test("renderer produces three 800x480 PNGs with at most four gray levels", async
 
 test("display API requires its token and supports ETag revalidation", async (context) => {
   const pageSet = await renderPageSet(createMockDashboardData());
-  const server = createInkPulseServer(pageSet, { displayToken: "test-token" });
+  const server = createInkPulseServer(pageSet, {
+    displayToken: "test-token",
+    refreshAfterSeconds: 900,
+  });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -51,9 +54,11 @@ test("display API requires its token and supports ETag revalidation", async (con
   assert.equal(manifestResponse.status, 200);
   const manifest = (await manifestResponse.json()) as {
     schemaVersion: number;
+    refreshAfterSeconds: number;
     pages: Array<{ id: string; imageUrl: string }>;
   };
   assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.refreshAfterSeconds, 900);
   assert.deepEqual(
     manifest.pages.map((page) => page.id),
     [...DISPLAY_PAGE_IDS],

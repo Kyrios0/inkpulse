@@ -21,8 +21,15 @@ export interface CodexUsage {
   collectorOnline: boolean;
 }
 
+export interface StockSourceStatus {
+  provider: string;
+  fetchedAt: string;
+  stale: boolean;
+}
+
 export interface DashboardData {
   stocks: StockQuote[];
+  stockSource: StockSourceStatus;
   codex: CodexUsage;
   generatedAt: string;
 }
@@ -34,6 +41,11 @@ export function createMockDashboardData(
 
   return {
     generatedAt,
+    stockSource: {
+      provider: "mock",
+      fetchedAt: generatedAt,
+      stale: false,
+    },
     stocks: [
       quote("SPY", "S&P 500 ETF", 689.42, 3.18, 0.46, [
         681, 683, 682, 686, 685, 688, 689,

@@ -126,14 +126,14 @@ function renderStocks(data: DashboardData): string {
 
   return documentSvg(
     "US STOCKS",
-    `DELAYED / MOCK DATA  ${formatTimestamp(data.generatedAt)}`,
+    `${data.stockSource.provider.toUpperCase()} / ${data.stockSource.stale ? "STALE" : "LATEST"}  ${formatTimestamp(data.stockSource.fetchedAt)}`,
     `<text x="36" y="66" class="column">SYMBOL</text>
       <text x="145" y="66" class="column">NAME</text>
       <text x="402" y="66" text-anchor="end" class="column">PRICE</text>
       <text x="572" y="66" text-anchor="end" class="column">DAY</text>
       <text x="686" y="66" text-anchor="middle" class="column">TREND</text>
       ${rows}`,
-    `${data.stocks.length} SYMBOLS    LAST SUCCESSFUL UPDATE ${formatTimestamp(data.generatedAt)}`,
+    `${data.stocks.length} SYMBOLS    LAST SUCCESSFUL UPDATE ${formatTimestamp(data.stockSource.fetchedAt)}`,
   );
 }
 

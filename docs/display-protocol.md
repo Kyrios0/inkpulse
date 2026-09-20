@@ -43,6 +43,10 @@ token. A version 1 response has this shape:
 with its cached version and skips unchanged downloads. Page image responses
 also provide an `ETag` and support `If-None-Match`.
 
+`refreshAfterSeconds` controls device checks, not the server's stock-provider
+schedule. Keeping these settings independent allows a battery-powered display
+to wake less often without making the server cache equally stale.
+
 ## Button behavior
 
 - **Left:** display the previous cached page, wrapping at the beginning.

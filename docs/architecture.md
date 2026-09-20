@@ -91,3 +91,32 @@ docs/
 The stock provider is intentionally behind an adapter. A keyless source can be
 used initially, but the rest of InkPulse must not depend on its response shape
 or continued availability.
+
+The first adapter uses Yahoo's unofficial chart endpoint with a conservative
+five-minute default refresh. Responses are validated and normalized before an
+atomic cache write. Partial refreshes retain the previous value for failed
+symbols, and a total provider outage keeps the last complete snapshot.
+
+As of September 2026, there is no equally suitable credential-free fallback
+for intraday US quotes. Stooq is not reachable from the deployment host,
+Nasdaq's supported market-data APIs require credentials, its public website
+endpoint is undocumented, and Cboe prohibits automated extraction from its
+delayed-quote pages. Open-source finance libraries wrap these upstream sources;
+they do not supply independent market data. The adapter boundary remains so a
+credentialed provider can be added later without changing the renderer.
+
+## Refresh cadence
+
+Five minutes is the initial server-side stock cadence because the provider is
+requested at five-minute chart granularity. Polling more frequently usually
+retrieves the same bar, creates avoidable load on an unofficial endpoint, and
+raises rate-limit risk. With the default six-symbol watchlist, a five-minute
+cadence produces at most 72 quote requests per hour.
+
+This is a configurable product choice rather than a hardware constraint. The
+device manifest cadence is configured separately. Initial estimates favor a
+future market-aware schedule rather than one fixed interval: check more often
+while US markets are open and every six hours while they are closed. The server
+can continue maintaining a five-minute cache, and the refresh button can
+request an immediate check. The estimates, assumptions, candidate profiles,
+and future measurements are maintained in [battery-life.md](battery-life.md).

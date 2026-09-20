@@ -17,7 +17,7 @@
     "render:mock": "npm run build --silent && node dist/apps/server/src/render-cli.js",
     "start": "node dist/apps/server/src/index.js",
     "pretest": "npm run build",
-    "test": "node --test dist/apps/server/test/server.test.js"
+    "test": "node --test dist/apps/server/test/server.test.js dist/apps/server/test/stocks.test.js"
   },
   "dependencies": {
     "sharp": "^0.35.4"

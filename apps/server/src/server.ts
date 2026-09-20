@@ -15,13 +15,17 @@ export interface ServerOptions {
   refreshAfterSeconds?: number;
 }
 
+export type PageSetSource = RenderedPageSet | (() => RenderedPageSet);
+
 export function createInkPulseServer(
-  pageSet: RenderedPageSet,
+  pageSetSource: PageSetSource,
   options: ServerOptions = {},
 ) {
   const refreshAfterSeconds = options.refreshAfterSeconds ?? 300;
 
   return createServer((request, response) => {
+    const pageSet =
+      typeof pageSetSource === "function" ? pageSetSource() : pageSetSource;
     routeRequest(request, response, pageSet, {
       ...options,
       refreshAfterSeconds,
