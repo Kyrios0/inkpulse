@@ -16,6 +16,7 @@
     "dev": "npm run build && node --watch dist/apps/server/src/index.js",
     "collect:codex": "node --env-file-if-exists=.env.local dist/apps/pc-agent/src/index.js --watch",
     "collect:codex:once": "node --env-file-if-exists=.env.local dist/apps/pc-agent/src/index.js",
+    "monitor:production": "node scripts/check-production.mjs",
     "render:mock": "npm run build --silent && node dist/apps/server/src/render-cli.js",
     "start": "node dist/apps/server/src/index.js",
     "pretest": "npm run build",

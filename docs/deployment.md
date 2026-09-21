@@ -78,5 +78,17 @@ Old releases are retained for recovery. Cleanup is intentionally a separate,
 explicit maintenance operation.
 
 The same `npm run deploy` entry point can be called by Linux CI later. CI
-integration is deliberately deferred until repository ownership, protected
-environments, and deployment-secret handling are decided.
+currently validates changes but does not deploy them. Production deployments
+remain an explicit local operation until protected-environment and rollback
+policies are chosen.
+
+## Availability monitoring
+
+The GitHub Actions production monitor runs the same `npm run
+monitor:production` probe available to local operators. It uses only the public
+base URL and the read-only device token. GitHub scheduling is a useful external
+availability signal, but it is not a real-time guarantee and can be delayed.
+
+PM2 restarts the Node.js process after application crashes. The deployment host
+must also have the PM2-generated systemd startup unit enabled so the saved
+process list returns after a host reboot.

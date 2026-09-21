@@ -1,0 +1,40 @@
+name: Production monitor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/production-monitor.yml"
+      - "scripts/check-production.mjs"
+      - "package.json"
+  schedule:
+    - cron: "2-59/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-monitor
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe production
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      INKPULSE_PUBLIC_BASE_URL: ${{ vars.INKPULSE_PUBLIC_BASE_URL }}
+      INKPULSE_MONITOR_DEVICE_TOKEN: ${{ secrets.INKPULSE_MONITOR_DEVICE_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check HTTPS API and rendered pages
+        run: npm run monitor:production

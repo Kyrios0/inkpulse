@@ -65,6 +65,22 @@ The E1001 refresh-cadence experiment is tracked in
 [docs/battery-life.md](docs/battery-life.md).
 Deployment and rollback are documented in [docs/deployment.md](docs/deployment.md).
 
+## Continuous verification
+
+GitHub Actions runs the build and tests on Linux and Windows for every push and
+pull request. A separate five-minute production monitor verifies HTTPS, the
+public health endpoint, authentication boundaries, manifest freshness, all
+three PNG pages, ETags, and cache revalidation.
+
+The monitor requires repository variable `INKPULSE_PUBLIC_BASE_URL` and the
+read-only Actions secret `INKPULSE_MONITOR_DEVICE_TOKEN`. It never receives the
+Codex ingest token or any Codex credentials. Run the same probe locally with:
+
+```sh
+INKPULSE_PUBLIC_BASE_URL=https://display.example.com \
+INKPULSE_MONITOR_DEVICE_TOKEN=... npm run monitor:production
+```
+
 ## Local development
 
 ```sh
@@ -120,4 +136,4 @@ updates while retaining the last reading.
 3. Add a replaceable US-stock provider adapter and server-side cache. **Complete.**
 4. Deploy under an unprivileged account with TLS ingress. **Complete.**
 5. Implement and test E1001 firmware when the hardware arrives.
-6. Add optional VPS health metrics after the core display flow is stable.
+6. Add cross-platform CI and external production monitoring. **Complete.**
