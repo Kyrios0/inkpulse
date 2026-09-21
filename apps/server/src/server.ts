@@ -8,10 +8,16 @@ import {
   type DisplayManifest,
   type DisplayPageId,
 } from "../../../packages/contracts/src/display.js";
+import {
+  parseCodexUsageReport,
+  type CodexUsageReport,
+} from "../../../packages/contracts/src/codex.js";
 import type { RenderedPageSet } from "./renderer.js";
 
 export interface ServerOptions {
   displayToken?: string;
+  codexIngestToken?: string;
+  onCodexUsage?: (report: CodexUsageReport) => Promise<void>;
   refreshAfterSeconds?: number;
 }
 
@@ -24,22 +30,26 @@ export function createInkPulseServer(
   const refreshAfterSeconds = options.refreshAfterSeconds ?? 300;
 
   return createServer((request, response) => {
-    const pageSet =
-      typeof pageSetSource === "function" ? pageSetSource() : pageSetSource;
-    routeRequest(request, response, pageSet, {
+    void routeRequest(request, response, pageSetSource, {
       ...options,
       refreshAfterSeconds,
+    }).catch((error: unknown) => {
+      console.error("Request failed", error);
+      if (!response.headersSent) sendJson(response, 500, { error: "internal_error" });
+      else response.destroy();
     });
   });
 }
 
-function routeRequest(
+async function routeRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  pageSet: RenderedPageSet,
+  pageSetSource: PageSetSource,
   options: Required<Pick<ServerOptions, "refreshAfterSeconds">> & ServerOptions,
-): void {
+): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
+  const pageSet =
+    typeof pageSetSource === "function" ? pageSetSource() : pageSetSource;
 
   if (request.method === "GET" && url.pathname === "/health") {
     sendJson(response, 200, {
@@ -47,6 +57,49 @@ function routeRequest(
       pages: pageSet.pages.size,
       generatedAt: pageSet.generatedAt,
     });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/metrics/codex") {
+    if (request.method !== "PUT") {
+      response.setHeader("Allow", "PUT");
+      sendJson(response, 405, { error: "method_not_allowed" });
+      return;
+    }
+    if (!options.codexIngestToken || !options.onCodexUsage) {
+      sendJson(response, 404, { error: "not_found" });
+      return;
+    }
+    if (!isAuthorized(request, options.codexIngestToken)) {
+      response.setHeader("WWW-Authenticate", 'Bearer realm="inkpulse-codex-ingest"');
+      sendJson(response, 401, { error: "unauthorized" });
+      return;
+    }
+    if (!request.headers["content-type"]?.toLowerCase().startsWith("application/json")) {
+      sendJson(response, 415, { error: "content_type_must_be_json" });
+      return;
+    }
+
+    try {
+      const report = parseCodexUsageReport(await readJsonBody(request, 8_192));
+      if (Date.parse(report.measuredAt) > Date.now() + 5 * 60_000) {
+        sendJson(response, 400, { error: "measured_at_is_in_the_future" });
+        return;
+      }
+      await options.onCodexUsage(report);
+      response.writeHead(204, { "Cache-Control": "no-store" });
+      response.end();
+    } catch (error) {
+      if (error instanceof RequestBodyError) {
+        sendJson(response, error.status, { error: error.code });
+        return;
+      }
+      if (error instanceof SyntaxError || isValidationError(error)) {
+        sendJson(response, 400, { error: "invalid_payload" });
+        return;
+      }
+      throw error;
+    }
     return;
   }
 
@@ -100,6 +153,36 @@ function routeRequest(
   }
 
   sendJson(response, 404, { error: "not_found" });
+}
+
+class RequestBodyError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+  ) {
+    super(code);
+  }
+}
+
+async function readJsonBody(request: IncomingMessage, limit: number): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    length += buffer.length;
+    if (length > limit) throw new RequestBodyError(413, "payload_too_large");
+    chunks.push(buffer);
+  }
+  if (length === 0) throw new RequestBodyError(400, "empty_payload");
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+}
+
+function isValidationError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.message.startsWith("Invalid Codex") ||
+      error.message.startsWith("Codex usage window"))
+  );
 }
 
 function buildManifest(

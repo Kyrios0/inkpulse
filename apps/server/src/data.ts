@@ -9,15 +9,12 @@ export interface StockQuote {
   updatedAt: string;
 }
 
-export interface UsageWindow {
-  label: string;
-  usedPercent: number;
-  resetsAt: string;
-}
+import type { CodexUsageWindow } from "../../../packages/contracts/src/codex.js";
 
 export interface CodexUsage {
-  windows: UsageWindow[];
+  windows: CodexUsageWindow[];
   measuredAt: string;
+  receivedAt: string | null;
   collectorOnline: boolean;
 }
 
@@ -69,15 +66,20 @@ export function createMockDashboardData(
     codex: {
       collectorOnline: true,
       measuredAt: generatedAt,
+      receivedAt: generatedAt,
       windows: [
         {
+          id: "primary",
           label: "5-hour window",
           usedPercent: 37,
+          windowDurationMinutes: 300,
           resetsAt: new Date(now.getTime() + 2.4 * 60 * 60 * 1000).toISOString(),
         },
         {
+          id: "secondary",
           label: "Weekly window",
           usedPercent: 64,
+          windowDurationMinutes: 10_080,
           resetsAt: new Date(now.getTime() + 3.2 * 24 * 60 * 60 * 1000).toISOString(),
         },
       ],

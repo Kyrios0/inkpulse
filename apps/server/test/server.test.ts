@@ -85,3 +85,73 @@ test("display API requires its token and supports ETag revalidation", async (con
   assert.equal(unversioned.status, 200);
   assert.equal(unversioned.headers.get("cache-control"), "private, no-cache");
 });
+
+test("Codex ingest validates its separate write token and payload", async (context) => {
+  let acceptedPercent: number | undefined;
+  const pageSet = await renderPageSet(createMockDashboardData());
+  const server = createInkPulseServer(pageSet, {
+    displayToken: "display-token",
+    codexIngestToken: "ingest-token",
+    onCodexUsage: async (report) => {
+      acceptedPercent = report.windows[0]?.usedPercent;
+    },
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  context.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const measuredAt = new Date().toISOString();
+  const payload = {
+    schemaVersion: 1,
+    measuredAt,
+    windows: [
+      {
+        id: "primary",
+        label: "5-hour window",
+        usedPercent: 31,
+        windowDurationMinutes: 300,
+        resetsAt: new Date(Date.now() + 3 * 60 * 60_000).toISOString(),
+      },
+    ],
+  };
+
+  const wrongToken = await fetch(`${baseUrl}/api/v1/metrics/codex`, {
+    method: "PUT",
+    headers: {
+      Authorization: "Bearer display-token",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(wrongToken.status, 401);
+
+  const invalid = await fetch(`${baseUrl}/api/v1/metrics/codex`, {
+    method: "PUT",
+    headers: {
+      Authorization: "Bearer ingest-token",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ...payload, windows: [{ ...payload.windows[0], usedPercent: 101 }] }),
+  });
+  assert.equal(invalid.status, 400);
+
+  const accepted = await fetch(`${baseUrl}/api/v1/metrics/codex`, {
+    method: "PUT",
+    headers: {
+      Authorization: "Bearer ingest-token",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(accepted.status, 204);
+  assert.equal(acceptedPercent, 31);
+
+  const cannotReadDisplay = await fetch(`${baseUrl}/api/v1/display/manifest`, {
+    headers: { Authorization: "Bearer ingest-token" },
+  });
+  assert.equal(cannotReadDisplay.status, 401);
+});

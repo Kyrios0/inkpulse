@@ -20,6 +20,13 @@ The payload records both when Codex produced the measurement and when the VPS
 received it. The renderer can therefore label old data as stale instead of
 presenting it as current.
 
+The implementation launches the installed Codex CLI's local App Server over
+stdio and calls `account/rateLimits/read`. It uses the existing local sign-in;
+the collector never parses Codex credential storage. This interface is kept
+behind one adapter because the App Server contract follows the installed Codex
+version. A collection run is intentionally one-shot so Windows Task Scheduler,
+cron, or a future desktop startup task can invoke the same command.
+
 ### InkPulse service on the deployment host
 
 The service runs as an unprivileged application user and has four

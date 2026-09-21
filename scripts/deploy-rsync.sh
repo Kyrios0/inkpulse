@@ -60,6 +60,7 @@ previous_release="$(readlink "$current_link" 2>/dev/null || true)"
 export PATH="$HOME/.local/node/bin:$HOME/.local/npm-global/bin:$PATH"
 export INKPULSE_LISTEN_HOST="127.0.0.1"
 export INKPULSE_LISTEN_PORT="$listen_port"
+export INKPULSE_DATA_DIR="$service_path/shared/data"
 
 runtime_environment="$service_path/shared/runtime.env"
 if [[ -f "$runtime_environment" ]]; then

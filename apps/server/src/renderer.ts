@@ -8,7 +8,8 @@ import {
   DISPLAY_WIDTH,
   type DisplayPageId,
 } from "../../../packages/contracts/src/display.js";
-import type { DashboardData, UsageWindow } from "./data.js";
+import type { CodexUsageWindow } from "../../../packages/contracts/src/codex.js";
+import type { DashboardData } from "./data.js";
 
 export interface RenderedPage {
   id: DisplayPageId;
@@ -89,9 +90,11 @@ function renderOverview(data: DashboardData): string {
     })
     .join("");
 
-  const usage = data.codex.windows
-    .map((window, index) => usageSummary(window, 510, 112 + index * 126))
-    .join("");
+  const usage = data.codex.windows.length > 0
+    ? data.codex.windows
+        .map((window, index) => usageSummary(window, 510, 112 + index * 126))
+        .join("")
+    : `<text x="643" y="220" text-anchor="middle" class="usage-title">NO MEASUREMENT</text>`;
 
   return documentSvg(
     "OVERVIEW",
@@ -138,8 +141,8 @@ function renderStocks(data: DashboardData): string {
 }
 
 function renderCodex(data: DashboardData): string {
-  const cards = data.codex.windows
-    .map((window, index) => {
+  const cards = data.codex.windows.length > 0
+    ? data.codex.windows.map((window, index) => {
       const y = 92 + index * 146;
       const remaining = Math.max(0, 100 - window.usedPercent);
 
@@ -151,8 +154,11 @@ function renderCodex(data: DashboardData): string {
         ${progressBar(54, y + 52, 692, 28, window.usedPercent)}
         <text x="54" y="${y + 107}" class="usage-meta">USED ${window.usedPercent}%</text>
         <text x="746" y="${y + 107}" text-anchor="end" class="usage-meta">RESETS ${formatReset(window.resetsAt)}</text>`;
-    })
-    .join("");
+      }).join("")
+    : `<rect x="34" y="92" width="732" height="270" rx="12"
+          fill="${palette.white}" stroke="${palette.black}" stroke-width="2"/>
+       <text x="400" y="222" text-anchor="middle" class="usage-title">NO CODEX USAGE RECEIVED</text>
+       <text x="400" y="252" text-anchor="middle" class="usage-meta">RUN THE PC COLLECTOR TO PUBLISH A MEASUREMENT</text>`;
 
   const age = ageLabel(data.codex.measuredAt, data.generatedAt);
   return documentSvg(
@@ -205,7 +211,7 @@ function documentSvg(
 </svg>`;
 }
 
-function usageSummary(window: UsageWindow, x: number, y: number): string {
+function usageSummary(window: CodexUsageWindow, x: number, y: number): string {
   const remaining = Math.max(0, 100 - window.usedPercent);
   return `<text x="${x}" y="${y + 20}" class="usage-title">${escapeXml(window.label.toUpperCase())}</text>
     <text x="${x + 266}" y="${y + 45}" text-anchor="end" class="remaining">${remaining}% LEFT</text>
@@ -262,7 +268,8 @@ function formatTimestamp(value: string): string {
     .replace(",", "");
 }
 
-function formatReset(value: string): string {
+function formatReset(value: string | null): string {
+  if (!value) return "UNKNOWN";
   return new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     hour: "2-digit",

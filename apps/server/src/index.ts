@@ -1,5 +1,7 @@
 import { resolve } from "node:path";
 
+import type { CodexUsageReport } from "../../../packages/contracts/src/codex.js";
+import { CodexCache, type CodexCacheSnapshot } from "./codex/cache.js";
 import { createMockDashboardData } from "./data.js";
 import { renderPageSet } from "./renderer.js";
 import { createInkPulseServer } from "./server.js";
@@ -25,6 +27,13 @@ const symbols = parseSymbols(
   process.env.INKPULSE_STOCK_SYMBOLS ?? "SPY,QQQ,NVDA,AAPL,MSFT,TSLA",
 );
 const dataDirectory = resolve(process.env.INKPULSE_DATA_DIR ?? "data");
+const codexStaleSeconds = parseSeconds(
+  process.env.INKPULSE_CODEX_STALE_SECONDS ?? "900",
+  "INKPULSE_CODEX_STALE_SECONDS",
+  60,
+  86_400,
+);
+const codexCache = new CodexCache(resolve(dataDirectory, "codex.json"));
 const stockService = new StockService(
   new YahooChartProvider(),
   new StockCache(resolve(dataDirectory, "stocks.json")),
@@ -33,6 +42,22 @@ const stockService = new StockService(
 );
 
 let dashboardData = createMockDashboardData(new Date());
+dashboardData = {
+  ...dashboardData,
+  codex: {
+    windows: [],
+    measuredAt: dashboardData.generatedAt,
+    receivedAt: null,
+    collectorOnline: false,
+  },
+};
+let codexSnapshot: CodexCacheSnapshot | undefined;
+try {
+  codexSnapshot = await codexCache.load();
+  if (codexSnapshot) dashboardData = applyCodexSnapshot(dashboardData, codexSnapshot);
+} catch (error) {
+  console.error("Could not load the Codex usage cache", error);
+}
 try {
   const cachedStocks = await stockService.load();
   if (cachedStocks) dashboardData = applyStockState(dashboardData, cachedStocks);
@@ -41,12 +66,21 @@ try {
 }
 
 let pageSet = await renderPageSet(dashboardData);
+let dashboardUpdateQueue = Promise.resolve();
 const displayToken = process.env.INKPULSE_DEVICE_TOKEN;
+const codexIngestToken = process.env.INKPULSE_CODEX_INGEST_TOKEN;
+if (displayToken && codexIngestToken && displayToken === codexIngestToken) {
+  throw new Error("Display and Codex ingest tokens must be different");
+}
 const server = createInkPulseServer(
   () => pageSet,
-  displayToken
-    ? { displayToken, refreshAfterSeconds: displayRefreshSeconds }
-    : { refreshAfterSeconds: displayRefreshSeconds },
+  {
+    ...(displayToken ? { displayToken } : {}),
+    ...(codexIngestToken
+      ? { codexIngestToken, onCodexUsage: acceptCodexUsage }
+      : {}),
+    refreshAfterSeconds: displayRefreshSeconds,
+  },
 );
 const refreshAbortController = new AbortController();
 let refreshingStocks = false;
@@ -84,8 +118,15 @@ async function refreshStocks(): Promise<void> {
     if (state.failures.length > 0) {
       console.error("Some stock quotes could not be refreshed", state.failures);
     }
-    dashboardData = applyStockState(dashboardData, state);
-    pageSet = await renderPageSet(dashboardData);
+    await serializeDashboardUpdate(async () => {
+      const nextStockData = applyStockState(dashboardData, state);
+      const nextData = codexSnapshot
+        ? applyCodexSnapshot(nextStockData, codexSnapshot)
+        : nextStockData;
+      const nextPageSet = await renderPageSet(nextData);
+      dashboardData = nextData;
+      pageSet = nextPageSet;
+    });
   } catch (error) {
     if (!refreshAbortController.signal.aborted) {
       console.error("Stock refresh failed", error);
@@ -95,12 +136,60 @@ async function refreshStocks(): Promise<void> {
   }
 }
 
+async function acceptCodexUsage(report: CodexUsageReport): Promise<void> {
+  await serializeDashboardUpdate(async () => {
+    if (
+      codexSnapshot &&
+      Date.parse(report.measuredAt) < Date.parse(codexSnapshot.report.measuredAt)
+    ) {
+      return;
+    }
+
+    const nextSnapshot: CodexCacheSnapshot = {
+      schemaVersion: 1,
+      receivedAt: new Date().toISOString(),
+      report,
+    };
+    await codexCache.save(nextSnapshot);
+    const nextData = applyCodexSnapshot(dashboardData, nextSnapshot);
+    const nextPageSet = await renderPageSet(nextData);
+    codexSnapshot = nextSnapshot;
+    dashboardData = nextData;
+    pageSet = nextPageSet;
+  });
+}
+
+function serializeDashboardUpdate(operation: () => Promise<void>): Promise<void> {
+  const result = dashboardUpdateQueue.then(operation);
+  dashboardUpdateQueue = result.catch(() => undefined);
+  return result;
+}
+
 function applyStockState(data: typeof dashboardData, state: StockState) {
   return {
     ...data,
     generatedAt: new Date().toISOString(),
     stocks: state.quotes,
     stockSource: state.source,
+  };
+}
+
+function applyCodexSnapshot(
+  data: typeof dashboardData,
+  snapshot: CodexCacheSnapshot,
+) {
+  const now = new Date();
+  return {
+    ...data,
+    generatedAt: now.toISOString(),
+    codex: {
+      windows: snapshot.report.windows,
+      measuredAt: snapshot.report.measuredAt,
+      receivedAt: snapshot.receivedAt,
+      collectorOnline:
+        now.getTime() - Date.parse(snapshot.report.measuredAt) <=
+        codexStaleSeconds * 1_000,
+    },
   };
 }
 

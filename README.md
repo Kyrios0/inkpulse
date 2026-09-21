@@ -56,8 +56,7 @@ Codex credentials, brokerage credentials, or general access to the PC.
 - `GET /api/v1/display/manifest` — page versions and image metadata
 - `GET /api/v1/display/pages/:pageId.png` — rendered four-level grayscale page
 - `GET /health` — process health for deployment checks
-- `PUT /api/v1/metrics/codex` — planned PC collector upload using a separate
-  write token
+- `PUT /api/v1/metrics/codex` — PC collector upload using a separate write token
 
 The display protocol is specified in [docs/display-protocol.md](docs/display-protocol.md).
 The component design and failure behavior are described in
@@ -88,11 +87,33 @@ frequency are environment settings. Provider failures preserve cached quotes
 and visibly mark the Stocks page stale; the display is informational and not a
 trading data source.
 
+## Codex usage
+
+The PC collector asks the locally installed Codex CLI for the signed-in
+account's rate-limit windows, normalizes them, and uploads only percentages,
+window durations, and reset times. It does not read or upload credential files,
+account identifiers, raw logs, or conversation data.
+
+Create an ignored `.env.local` on the PC with `INKPULSE_CODEX_INGEST_URL` and
+`INKPULSE_CODEX_INGEST_TOKEN`, then run:
+
+```sh
+npm run collect:codex
+```
+
+Use `npm run collect:codex -- --dry-run` to verify the local Codex read without
+contacting the server.
+
+The command is one-shot and works on Windows, WSL, and Linux. Schedule it every
+five minutes on a PC that is normally on; the server marks the value offline
+after 15 minutes without a successful upload while retaining the last reading.
+
 ## Delivery stages
 
 1. Build a mock-data server and render all three pages at 800 x 480.
-2. Add the PC Codex collector and freshness handling.
-3. Add a replaceable US-stock provider adapter and server-side cache.
-4. Deploy the service under an unprivileged account on the configured host.
+2. Add the PC Codex collector and freshness handling. **Complete.**
+3. Add a replaceable US-stock provider adapter and server-side cache. **Complete.**
+4. Deploy under an unprivileged account. **Runtime, PM2, loopback service, and
+   persistent caches complete; TLS ingress and runtime tokens pending.**
 5. Implement and test E1001 firmware when the hardware arrives.
 6. Add optional VPS health metrics after the core display flow is stable.

@@ -14,10 +14,11 @@
     "deploy:bootstrap": "node scripts/deploy.mjs --bootstrap-runtime",
     "deploy:dry-run": "node scripts/deploy.mjs --dry-run",
     "dev": "npm run build && node --watch dist/apps/server/src/index.js",
+    "collect:codex": "npm run build --silent && node --env-file-if-exists=.env.local dist/apps/pc-agent/src/index.js",
     "render:mock": "npm run build --silent && node dist/apps/server/src/render-cli.js",
     "start": "node dist/apps/server/src/index.js",
     "pretest": "npm run build",
-    "test": "node --test dist/apps/server/test/server.test.js dist/apps/server/test/stocks.test.js"
+    "test": "node --test dist/apps/server/test/*.test.js dist/apps/pc-agent/test/*.test.js"
   },
   "dependencies": {
     "sharp": "^0.35.4"
