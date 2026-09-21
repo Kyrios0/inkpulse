@@ -95,25 +95,29 @@ window durations, and reset times. It does not read or upload credential files,
 account identifiers, raw logs, or conversation data.
 
 Create an ignored `.env.local` on the PC with `INKPULSE_CODEX_INGEST_URL` and
-`INKPULSE_CODEX_INGEST_TOKEN`, then run:
+`INKPULSE_CODEX_INGEST_TOKEN`, build once, then run the one-minute collector:
 
 ```sh
+npm run build
 npm run collect:codex
 ```
 
-Use `npm run collect:codex -- --dry-run` to verify the local Codex read without
-contacting the server.
+Use `npm run collect:codex:once -- --dry-run` to verify the local Codex read
+without contacting the server. On Windows,
+`scripts/install-windows-collector-task.ps1` installs the watch process as a
+current-user task launched at sign-in; it does not require administrator access.
+On native Windows the collector discovers the newest installed Codex executable,
+so a normal Codex application update does not require editing the task.
 
-The command is one-shot and works on Windows, WSL, and Linux. Schedule it every
-five minutes on a PC that is normally on; the server marks the value offline
-after 15 minutes without a successful upload while retaining the last reading.
+The same collector works on Windows, WSL, and Linux. It publishes once per
+minute while running. The server marks the value offline after three missed
+updates while retaining the last reading.
 
 ## Delivery stages
 
 1. Build a mock-data server and render all three pages at 800 x 480.
 2. Add the PC Codex collector and freshness handling. **Complete.**
 3. Add a replaceable US-stock provider adapter and server-side cache. **Complete.**
-4. Deploy under an unprivileged account. **Runtime, PM2, loopback service, and
-   persistent caches complete; TLS ingress and runtime tokens pending.**
+4. Deploy under an unprivileged account with TLS ingress. **Complete.**
 5. Implement and test E1001 firmware when the hardware arrives.
 6. Add optional VPS health metrics after the core display flow is stable.

@@ -18,17 +18,17 @@ const stockRefreshSeconds = parseSeconds(
   3_600,
 );
 const displayRefreshSeconds = parseSeconds(
-  process.env.INKPULSE_DISPLAY_REFRESH_SECONDS ?? "300",
+  process.env.INKPULSE_DISPLAY_REFRESH_SECONDS ?? "60",
   "INKPULSE_DISPLAY_REFRESH_SECONDS",
   60,
   86_400,
 );
 const symbols = parseSymbols(
-  process.env.INKPULSE_STOCK_SYMBOLS ?? "SPY,QQQ,NVDA,AAPL,MSFT,TSLA",
+  process.env.INKPULSE_STOCK_SYMBOLS ?? "JNJ,JPM,META,PG,XLP",
 );
 const dataDirectory = resolve(process.env.INKPULSE_DATA_DIR ?? "data");
 const codexStaleSeconds = parseSeconds(
-  process.env.INKPULSE_CODEX_STALE_SECONDS ?? "900",
+  process.env.INKPULSE_CODEX_STALE_SECONDS ?? "180",
   "INKPULSE_CODEX_STALE_SECONDS",
   60,
   86_400,

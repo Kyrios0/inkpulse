@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 import type {
@@ -24,7 +26,7 @@ interface RawRateLimitSnapshot {
 }
 
 export async function readCodexUsage(
-  command = process.env.INKPULSE_CODEX_COMMAND ?? "codex",
+  command = resolveCodexCommand(),
   timeoutMilliseconds = 15_000,
 ): Promise<CodexUsageReport> {
   const child = spawn(command, ["app-server"], {
@@ -117,6 +119,30 @@ export async function readCodexUsage(
       },
     });
   });
+}
+
+export function resolveCodexCommand(): string {
+  const configured = process.env.INKPULSE_CODEX_COMMAND?.trim();
+  if (configured) return configured;
+  if (process.platform !== "win32" || !process.env.LOCALAPPDATA) return "codex";
+
+  const binaryRoot = join(process.env.LOCALAPPDATA, "OpenAI", "Codex", "bin");
+  try {
+    const candidates = readdirSync(binaryRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(binaryRoot, entry.name, "codex.exe"))
+      .flatMap((path) => {
+        try {
+          return [{ path, modifiedAt: statSync(path).mtimeMs }];
+        } catch {
+          return [];
+        }
+      })
+      .sort((left, right) => right.modifiedAt - left.modifiedAt);
+    return candidates[0]?.path ?? "codex";
+  } catch {
+    return "codex";
+  }
 }
 
 export function normalizeRateLimits(
