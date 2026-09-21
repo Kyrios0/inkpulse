@@ -95,6 +95,12 @@ four-level grayscale output, display authorization, manifest ordering, and HTTP
 cache revalidation. `npm run render:mock` writes preview images to
 `output/mock/`; generated output is gitignored.
 
+The display uses a shared monochrome grid with large readings, thin dividers,
+and page indicators. Filled capacity segments mean **remaining** allowance.
+All displayed times are UTC. Mock previews use illustrative JNJ, JPM, META, PG,
+and XLP quotes; they are labeled as sample data. Watchlists above six symbols
+use compact stock rows; the overview shows the first six.
+
 ## Stock data
 
 The initial keyless adapter requests five-minute US quote charts from Yahoo and

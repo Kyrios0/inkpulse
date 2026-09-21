@@ -1,15 +1,8 @@
 import { createHash } from "node:crypto";
-
 import sharp from "sharp";
-
-import {
-  DISPLAY_HEIGHT,
-  DISPLAY_PAGE_IDS,
-  DISPLAY_WIDTH,
-  type DisplayPageId,
-} from "../../../packages/contracts/src/display.js";
+import { DISPLAY_HEIGHT, DISPLAY_PAGE_IDS, DISPLAY_WIDTH, type DisplayPageId } from "../../../packages/contracts/src/display.js";
 import type { CodexUsageWindow } from "../../../packages/contracts/src/codex.js";
-import type { DashboardData } from "./data.js";
+import type { DashboardData, StockQuote } from "./data.js";
 
 export interface RenderedPage {
   id: DisplayPageId;
@@ -24,284 +17,202 @@ export interface RenderedPageSet {
   pages: Map<DisplayPageId, RenderedPage>;
 }
 
-const palette = {
-  black: "#000000",
-  dark: "#555555",
-  light: "#aaaaaa",
-  white: "#ffffff",
-} as const;
+// A shared editorial grid: 28px margins, 72px header, 40px footer.
+// Reserve solid black for readings and remaining capacity; gray is secondary.
+const ink = "#000000";
+const gray = "#555555";
+const light = "#aaaaaa";
 
 export async function renderPageSet(data: DashboardData): Promise<RenderedPageSet> {
-  const definitions: Array<{
-    id: DisplayPageId;
-    title: string;
-    svg: string;
-  }> = [
+  const definitions: Array<{ id: DisplayPageId; title: string; svg: string }> = [
     { id: "overview", title: "Overview", svg: renderOverview(data) },
     { id: "stocks", title: "Stocks", svg: renderStocks(data) },
     { id: "codex", title: "Codex", svg: renderCodex(data) },
   ];
-
-  const rendered = await Promise.all(
-    definitions.map(async ({ id, title, svg }) => {
-      const png = await sharp(Buffer.from(svg))
-        .png({ palette: true, colours: 4, dither: 0 })
-        .toBuffer();
-      const digest = createHash("sha256").update(png).digest("hex");
-
-      return {
-        id,
-        title,
-        png,
-        version: `sha256:${digest}` as const,
-        updatedAt: data.generatedAt,
-      };
-    }),
-  );
-
-  const pages = new Map(rendered.map((page) => [page.id, page]));
+  const rendered = await Promise.all(definitions.map(async ({ id, title, svg }) => {
+    const png = await sharp(Buffer.from(svg)).png({ palette: true, colours: 4, dither: 0 }).toBuffer();
+    return { id, title, png, version: `sha256:${createHash("sha256").update(png).digest("hex")}` as const, updatedAt: data.generatedAt };
+  }));
+  const pages = new Map(rendered.map(page => [page.id, page]));
   for (const id of DISPLAY_PAGE_IDS) {
-    if (!pages.has(id)) {
-      throw new Error(`Renderer did not produce required page: ${id}`);
-    }
+    if (!pages.has(id)) throw new Error(`Renderer did not produce required page: ${id}`);
   }
-
   return { generatedAt: data.generatedAt, pages };
 }
 
 function renderOverview(data: DashboardData): string {
-  const featured = data.stocks.slice(0, 4);
-  const stockCards = featured
-    .map((stock, index) => {
-      const x = 24 + (index % 2) * 238;
-      const y = 82 + Math.floor(index / 2) * 154;
-      const direction = stock.change >= 0 ? "+" : "";
-
-      return `
-        <rect x="${x}" y="${y}" width="222" height="136" rx="10"
-          fill="${palette.white}" stroke="${palette.black}" stroke-width="2"/>
-        <text x="${x + 14}" y="${y + 31}" class="symbol">${escapeXml(stock.symbol)}</text>
-        <text x="${x + 208}" y="${y + 29}" text-anchor="end" class="small">${escapeXml(stock.name)}</text>
-        <text x="${x + 14}" y="${y + 78}" class="price">${stock.price.toFixed(2)}</text>
-        <rect x="${x + 14}" y="${y + 94}" width="194" height="28" rx="5"
-          fill="${stock.change >= 0 ? palette.light : palette.dark}"/>
-        <text x="${x + 111}" y="${y + 114}" text-anchor="middle"
-          class="change ${stock.change < 0 ? "inverse" : ""}">${direction}${stock.change.toFixed(2)}  ${direction}${stock.changePercent.toFixed(2)}%</text>`;
-    })
-    .join("");
-
-  const usage = data.codex.windows.length > 0
-    ? data.codex.windows
-        .map((window, index) => usageSummary(window, 510, 112 + index * 126))
-        .join("")
-    : `<text x="643" y="220" text-anchor="middle" class="usage-title">NO MEASUREMENT</text>`;
-
-  return documentSvg(
-    "OVERVIEW",
-    formatTimestamp(data.generatedAt),
-    `${stockCards}
-      <line x1="494" y1="82" x2="494" y2="374" stroke="${palette.black}" stroke-width="2"/>
-      <text x="510" y="94" class="section">CODEX USAGE</text>
-      ${usage}
-      <rect x="510" y="365" width="266" height="34" rx="6" fill="${palette.light}"/>
-      <text x="643" y="388" text-anchor="middle" class="status">COLLECTOR ${data.codex.collectorOnline ? "ONLINE" : "OFFLINE"}</text>`,
-    "LEFT / RIGHT: PAGES    REFRESH: UPDATE",
-  );
+  const stocks = data.stocks.slice(0, 6);
+  // Align the final divider with the adjacent column's bottom edge.
+  const rowHeight = (422 - 130 - 19) / Math.max(1, stocks.length - 1);
+  const rows = stocks.map((stock, index) => {
+    const y = 130 + index * rowHeight;
+    return `${text(28, y, stock.symbol, "symbol")}
+      ${text(290, y, price(stock.price), "price", "end")}
+      ${text(456, y, signed(stock.changePercent) + "%", "change", "end")}
+      ${line(28, y + 19, 456, y + 19, light)}`;
+  }).join("");
+  const usage = data.codex.windows.slice(0, 2).map((window, index) => {
+    const y = 128 + index * 144;
+    return `${text(512, y, windowLabel(window), "label")}
+      ${text(512, y + 59, remaining(window) + "%", "summary-number")}
+      ${text(772, y + 57, "LEFT", "label", "end")}
+      ${capacityBar(512, y + 76, 260, remaining(window))}
+      ${text(512, y + 112, "Resets " + formatReset(window.resetsAt), "meta")}`;
+  }).join("");
+  return documentSvg("At a glance", "overview", data,
+    `${text(28, 96, data.stocks.length > 6 ? "WATCHLIST / FIRST 6" : "WATCHLIST", "label")}
+     ${text(456, 96, "DAY %", "label", "end")}
+     ${text(512, 96, "CODEX / REMAINING", "label")}
+     ${line(484, 88, 484, 422, light)}
+     ${rows || text(28, 200, "No stock quotes yet", "body")}
+     ${usage || text(512, 206, "Awaiting usage", "body")}
+     ${text(512, 422, data.codex.collectorOnline ? "PC connected" : data.codex.windows.length ? "PC offline / last reading" : "PC offline", "meta")}`,
+    stockStatus(data));
 }
 
 function renderStocks(data: DashboardData): string {
-  const rows = data.stocks
-    .map((stock, index) => {
-      const y = 78 + index * 58;
-      const direction = stock.change >= 0 ? "+" : "";
-      const sparkline = sparklinePath(stock.points, 604, y + 9, 166, 34);
-
-      return `
-        <rect x="22" y="${y}" width="756" height="50" rx="7"
-          fill="${index % 2 === 0 ? palette.white : palette.light}" stroke="${palette.dark}"/>
-        <text x="36" y="${y + 31}" class="row-symbol">${escapeXml(stock.symbol)}</text>
-        <text x="145" y="${y + 30}" class="row-name">${escapeXml(stock.name)}</text>
-        <text x="402" y="${y + 31}" text-anchor="end" class="row-price">${stock.price.toFixed(2)}</text>
-        <text x="572" y="${y + 31}" text-anchor="end" class="row-change">${direction}${stock.change.toFixed(2)}  ${direction}${stock.changePercent.toFixed(2)}%</text>
-        <path d="${sparkline}" fill="none" stroke="${palette.black}" stroke-width="3"/>`;
-    })
-    .join("");
-
-  return documentSvg(
-    "US STOCKS",
-    `${data.stockSource.provider.toUpperCase()} / ${data.stockSource.stale ? "STALE" : "LATEST"}  ${formatTimestamp(data.stockSource.fetchedAt)}`,
-    `<text x="36" y="66" class="column">SYMBOL</text>
-      <text x="145" y="66" class="column">NAME</text>
-      <text x="402" y="66" text-anchor="end" class="column">PRICE</text>
-      <text x="572" y="66" text-anchor="end" class="column">DAY</text>
-      <text x="686" y="66" text-anchor="middle" class="column">TREND</text>
-      ${rows}`,
-    `${data.stocks.length} SYMBOLS    LAST SUCCESSFUL UPDATE ${formatTimestamp(data.stockSource.fetchedAt)}`,
-  );
+  const stocks = data.stocks;
+  const compact = stocks.length > 6;
+  const rowHeight = Math.min(64, 324 / Math.max(1, stocks.length));
+  const rows = stocks.map((stock, index) => {
+    const y = (compact ? 124 : 130) + index * rowHeight;
+    return `${text(28, y, stock.symbol, compact ? "compact" : "symbol")}
+      ${compact ? "" : text(28, y + 19, truncate(stock.name, 25), "meta")}
+      ${text(372, y + 1, price(stock.price), compact ? "compact" : "price", "end")}
+      ${text(520, y, signed(stock.changePercent) + "%", compact ? "compact" : "change", "end")}
+      ${compact ? "" : text(520, y + 19, signed(stock.change) + " USD", "meta", "end")}
+      ${sparkline(stock, 570, y - (compact ? 14 : 17), 198, compact ? 16 : 33)}
+      ${line(28, y + (compact ? 9 : 31), 772, y + (compact ? 9 : 31), light)}`;
+  }).join("");
+  return documentSvg("Watchlist", "stocks", data,
+    `${text(28, 96, "US EQUITIES", "label")}
+     ${text(372, 96, "PRICE / USD", "label", "end")}
+     ${text(520, 96, "DAY CHANGE", "label", "end")}
+     ${text(570, 96, "PRICE TREND", "label")}
+     ${rows || text(28, 210, "Waiting for stock quotes", "body")}`,
+    stockStatus(data));
 }
 
 function renderCodex(data: DashboardData): string {
-  const cards = data.codex.windows.length > 0
-    ? data.codex.windows.map((window, index) => {
-      const y = 92 + index * 146;
-      const remaining = Math.max(0, 100 - window.usedPercent);
-
-      return `
-        <rect x="34" y="${y}" width="732" height="124" rx="12"
-          fill="${palette.white}" stroke="${palette.black}" stroke-width="2"/>
-        <text x="54" y="${y + 34}" class="usage-title">${escapeXml(window.label.toUpperCase())}</text>
-        <text x="746" y="${y + 34}" text-anchor="end" class="remaining">${remaining}% REMAINING</text>
-        ${progressBar(54, y + 52, 692, 28, window.usedPercent)}
-        <text x="54" y="${y + 107}" class="usage-meta">USED ${window.usedPercent}%</text>
-        <text x="746" y="${y + 107}" text-anchor="end" class="usage-meta">RESETS ${formatReset(window.resetsAt)}</text>`;
-      }).join("")
-    : `<rect x="34" y="92" width="732" height="270" rx="12"
-          fill="${palette.white}" stroke="${palette.black}" stroke-width="2"/>
-       <text x="400" y="222" text-anchor="middle" class="usage-title">NO CODEX USAGE RECEIVED</text>
-       <text x="400" y="252" text-anchor="middle" class="usage-meta">RUN THE PC COLLECTOR TO PUBLISH A MEASUREMENT</text>`;
-
-  const age = ageLabel(data.codex.measuredAt, data.generatedAt);
-  return documentSvg(
-    "CODEX",
-    "USAGE WINDOWS",
-    `${cards}
-      <rect x="34" y="394" width="732" height="34" rx="6" fill="${palette.light}"/>
-      <text x="52" y="417" class="status">COLLECTOR ${data.codex.collectorOnline ? "ONLINE" : "OFFLINE"}</text>
-      <text x="748" y="417" text-anchor="end" class="status">MEASURED ${age}</text>`,
-    "WHEN THE PC IS OFF, THE LAST MEASUREMENT REMAINS VISIBLE",
-  );
+  const windows = data.codex.windows.slice(0, 2);
+  const panels = windows.map((window, index) => {
+    const x = 28 + index * 392;
+    const left = remaining(window);
+    return `${text(x, 110, windowLabel(window), "label")}
+      ${left <= 10 ? text(x + 352, 110, "LOW", "label", "end") : ""}
+      ${text(x, 228, String(left), "hero")}
+      ${text(x + 352, 226, "%", "percent", "end")}
+      ${text(x, 265, "REMAINING", "label")}
+      ${capacityBar(x, 288, 352, left)}
+      ${text(x, 345, percent(window.usedPercent) + "% used", "body")}
+      ${text(x, 374, "Resets " + formatReset(window.resetsAt), "meta")}`;
+  }).join("");
+  return documentSvg("Codex capacity", "codex", data,
+    `${panels || `${text(28, 194, "Awaiting your first reading", "empty-title")}
+      ${text(28, 230, "Usage appears when the PC collector connects.", "body")}`}
+     ${windows.length > 1 ? line(400, 96, 400, 384, light) : ""}
+     ${line(28, 398, 772, 398, light)}
+     <circle cx="33" cy="420" r="4" fill="${data.codex.collectorOnline ? ink : "#ffffff"}" stroke="${ink}" stroke-width="2"/>
+     ${text(46, 425, data.codex.collectorOnline ? "PC connected" : windows.length ? "PC offline / showing last reading" : "PC offline", "meta")}
+     ${text(772, 425, windows.length ? "Measured " + ageLabel(data.codex.measuredAt, data.generatedAt) : "No measurement", "meta", "end")}`,
+    "Capacity bars show remaining allowance");
 }
 
-function documentSvg(
-  title: string,
-  subtitle: string,
-  body: string,
-  footer: string,
-): string {
+function documentSvg(title: string, active: DisplayPageId, data: DashboardData, body: string, footer: string): string {
+  const tabs = DISPLAY_PAGE_IDS.map((id, i) => {
+    const x = 591 + i * 66;
+    return `${id === active ? `<rect x="${x - 8}" y="448" width="60" height="23" fill="${ink}"/>` : ""}
+      ${text(x + 22, 464, ["HOME", "STOCKS", "CODEX"][i]!, id === active ? "nav selected" : "nav", "middle")}`;
+  }).join("");
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${DISPLAY_WIDTH}" height="${DISPLAY_HEIGHT}" viewBox="0 0 ${DISPLAY_WIDTH} ${DISPLAY_HEIGHT}">
-  <rect width="800" height="480" fill="${palette.white}"/>
-  <style>
-    text { font-family: "DejaVu Sans", Arial, sans-serif; fill: ${palette.black}; }
-    .title { font-size: 29px; font-weight: 800; letter-spacing: 2px; }
-    .subtitle { font-size: 12px; font-weight: 600; letter-spacing: 1px; }
-    .section { font-size: 16px; font-weight: 800; letter-spacing: 1px; }
-    .symbol { font-size: 21px; font-weight: 800; }
-    .small { font-size: 9px; fill: ${palette.dark}; }
-    .price { font-size: 32px; font-weight: 700; }
-    .change { font-size: 15px; font-weight: 800; }
-    .inverse { fill: ${palette.white}; }
-    .status { font-size: 13px; font-weight: 800; letter-spacing: .6px; }
-    .column { font-size: 11px; font-weight: 800; letter-spacing: .8px; }
-    .row-symbol { font-size: 18px; font-weight: 800; }
-    .row-name { font-size: 13px; font-weight: 600; }
-    .row-price { font-size: 19px; font-weight: 700; }
-    .row-change { font-size: 15px; font-weight: 700; }
-    .usage-title { font-size: 19px; font-weight: 800; letter-spacing: 1px; }
-    .remaining { font-size: 18px; font-weight: 800; }
-    .usage-meta { font-size: 12px; font-weight: 700; }
-    .footer { font-size: 10px; font-weight: 700; letter-spacing: .6px; }
-  </style>
-  <rect x="0" y="0" width="800" height="52" fill="${palette.black}"/>
-  <text x="22" y="35" class="title" fill="${palette.white}" style="fill:${palette.white}">INKPULSE / ${escapeXml(title)}</text>
-  <text x="778" y="33" text-anchor="end" class="subtitle" fill="${palette.white}" style="fill:${palette.white}">${escapeXml(subtitle)}</text>
-  ${body}
-  <line x1="0" y1="448" x2="800" y2="448" stroke="${palette.black}" stroke-width="2"/>
-  <text x="400" y="469" text-anchor="middle" class="footer">${escapeXml(footer)}</text>
-</svg>`;
+  <svg xmlns="http://www.w3.org/2000/svg" width="${DISPLAY_WIDTH}" height="${DISPLAY_HEIGHT}" viewBox="0 0 800 480">
+    <rect width="800" height="480" fill="#ffffff"/>
+    <style>
+      text { font-family: "DejaVu Sans", Arial, sans-serif; fill: ${ink}; }
+      .brand { font-size: 12px; font-weight: 700; letter-spacing: 2px; }
+      .title { font-size: 28px; font-weight: 700; }
+      .label { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+      .symbol { font-size: 23px; font-weight: 700; }
+      .price { font-size: 27px; font-weight: 700; }
+      .change { font-size: 22px; font-weight: 700; }
+      .compact { font-size: 18px; font-weight: 700; }
+      .meta { font-size: 13px; fill: ${gray}; }
+      .body { font-size: 18px; }
+      .summary-number { font-size: 49px; font-weight: 700; letter-spacing: -2px; }
+      .hero { font-size: 112px; font-weight: 700; letter-spacing: -5px; }
+      .percent { font-size: 46px; }
+      .empty-title { font-size: 30px; font-weight: 700; }
+      .footer { font-size: 11px; fill: ${gray}; }
+      .nav { font-size: 10px; font-weight: 700; }
+      .selected { fill: #ffffff; }
+    </style>
+    ${text(28, 23, "INKPULSE", "brand")}
+    ${text(28, 56, title, "title")}
+    ${text(772, 25, formatTimestamp(data.generatedAt), "label", "end")}
+    ${text(772, 51, data.stockSource.provider === "mock" ? "SAMPLE DATA / UTC" : "ALL TIMES UTC", "meta", "end")}
+    ${line(28, 71, 772, 71, ink, 2)}
+    ${body}
+    ${line(28, 440, 772, 440, ink)}
+    ${text(28, 464, footer, "footer")}
+    ${tabs}
+  </svg>`;
 }
 
-function usageSummary(window: CodexUsageWindow, x: number, y: number): string {
-  const remaining = Math.max(0, 100 - window.usedPercent);
-  return `<text x="${x}" y="${y + 20}" class="usage-title">${escapeXml(window.label.toUpperCase())}</text>
-    <text x="${x + 266}" y="${y + 45}" text-anchor="end" class="remaining">${remaining}% LEFT</text>
-    ${progressBar(x, y + 55, 266, 22, window.usedPercent)}
-    <text x="${x}" y="${y + 100}" class="usage-meta">RESET ${formatReset(window.resetsAt)}</text>`;
+function text(x: number, y: number, value: string, style: string, anchor = "start"): string {
+  return `<text x="${x}" y="${y}" class="${style}" text-anchor="${anchor}">${escapeXml(value)}</text>`;
 }
 
-function progressBar(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  percent: number,
-): string {
-  const clamped = Math.max(0, Math.min(100, percent));
-  const usedWidth = Math.round((width * clamped) / 100);
-  return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="4" fill="${palette.light}"/>
-    <rect x="${x}" y="${y}" width="${usedWidth}" height="${height}" rx="4" fill="${palette.dark}"/>
-    <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="4" fill="none" stroke="${palette.black}" stroke-width="2"/>`;
+function line(x1: number, y1: number, x2: number, y2: number, color: string, width = 1): string {
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${width}"/>`;
 }
 
-function sparklinePath(
-  points: number[],
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-): string {
-  if (points.length < 2) return "";
+function capacityBar(x: number, y: number, width: number, value: number): string {
+  const gap = 4;
+  const segment = (width - gap * 19) / 20;
+  const clamped = Math.max(0, Math.min(100, value));
+  return Array.from({ length: 20 }, (_, i) => {
+    const fill = Math.max(0, Math.min(1, clamped / 5 - i));
+    const sx = x + i * (segment + gap);
+    return `<rect x="${sx}" y="${y}" width="${segment}" height="14" fill="#ffffff" stroke="${light}"/>
+      ${fill > 0 ? `<rect x="${sx}" y="${y}" width="${segment * fill}" height="14" fill="${ink}"/>` : ""}`;
+  }).join("");
+}
+
+function sparkline(stock: StockQuote, x: number, y: number, width: number, height: number): string {
+  const points = stock.points.filter(Number.isFinite);
+  if (points.length < 2) return text(x + width / 2, y + 23, "No trend", "meta", "middle");
   const min = Math.min(...points);
   const max = Math.max(...points);
-  const range = max - min || 1;
-
-  return points
-    .map((point, index) => {
-      const px = x + (index / (points.length - 1)) * width;
-      const py = y + height - ((point - min) / range) * height;
-      return `${index === 0 ? "M" : "L"}${px.toFixed(1)},${py.toFixed(1)}`;
-    })
-    .join(" ");
+  const py = (value: number) => max === min ? y + height / 2 : y + height - (value - min) / (max - min) * height;
+  const path = points.map((p, i) => `${i ? "L" : "M"}${(x + i / (points.length - 1) * width).toFixed(1)},${py(p).toFixed(1)}`).join(" ");
+  return `<path d="${path}" fill="none" stroke="${ink}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${x + width}" cy="${py(points[points.length - 1]!)}" r="3" fill="${ink}"/>`;
 }
 
+function percent(value: number): number { return Math.round(Math.max(0, Math.min(100, value)) * 10) / 10; }
+function remaining(window: CodexUsageWindow): number { return percent(100 - window.usedPercent); }
+function signed(value: number): string { return (value > 0 ? "+" : value < 0 ? "−" : "") + Math.abs(value).toFixed(2); }
+function price(value: number): string { return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function truncate(value: string, max: number): string { return value.length > max ? value.slice(0, max - 1) + "…" : value; }
+function windowLabel(window: CodexUsageWindow): string { return truncate(window.label.replace(/ window$/i, "").toUpperCase(), 24); }
+function stockStatus(data: DashboardData): string {
+  return `${truncate(data.stockSource.provider.toUpperCase(), 16)} / ${data.stockSource.stale ? "STALE" : "FETCHED"} ${formatTimestamp(data.stockSource.fetchedAt)} UTC`;
+}
 function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "UTC",
-  })
-    .format(new Date(value))
-    .toUpperCase()
-    .replace(",", "");
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }).format(new Date(value)).replace(",", "").toUpperCase();
 }
-
 function formatReset(value: string | null): string {
-  if (!value) return "UNKNOWN";
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "UTC",
-  })
-    .format(new Date(value))
-    .toUpperCase();
+  if (!value) return "unknown";
+  return new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }).format(new Date(value));
 }
-
 function ageLabel(measuredAt: string, generatedAt: string): string {
-  const ageMinutes = Math.max(
-    0,
-    Math.round(
-      (new Date(generatedAt).getTime() - new Date(measuredAt).getTime()) / 60_000,
-    ),
-  );
-  if (ageMinutes < 1) return "JUST NOW";
-  if (ageMinutes === 1) return "1 MIN AGO";
-  return `${ageMinutes} MINS AGO`;
+  const minutes = Math.max(0, Math.round((new Date(generatedAt).getTime() - new Date(measuredAt).getTime()) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+  return `${Math.floor(minutes / 1440)}d ago`;
 }
-
 function escapeXml(value: string): string {
-  return value.replace(/[<>&"']/g, (character) => {
-    const entities: Record<string, string> = {
-      "<": "&lt;",
-      ">": "&gt;",
-      "&": "&amp;",
-      '"': "&quot;",
-      "'": "&apos;",
-    };
-    return entities[character] ?? character;
-  });
+  const entities: Record<string, string> = { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" };
+  return value.replace(/[<>&"']/g, character => entities[character] ?? character);
 }
