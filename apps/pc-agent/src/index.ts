@@ -1,12 +1,13 @@
 import { readCodexUsage } from "./codex-app-server.js";
+import { readClaudeUsage } from "./claude-desktop.js";
 import { setTimeout as wait } from "node:timers/promises";
 
 const dryRun = process.argv.includes("--dry-run");
 const watch = process.argv.includes("--watch");
 
 if (dryRun) {
-  const report = await readCodexUsage();
-  console.log(JSON.stringify(report, null, 2));
+  const report = process.argv.includes("--claude") ? await readClaudeUsage() : await readCodexUsage();
+  console.log(JSON.stringify(report ?? { status: "no_measurement" }, null, 2));
 } else {
   const ingestUrl = requiredEnvironmentVariable("INKPULSE_CODEX_INGEST_URL");
   const ingestToken = requiredEnvironmentVariable("INKPULSE_CODEX_INGEST_TOKEN");
@@ -23,7 +24,7 @@ if (dryRun) {
     console.log(`InkPulse Codex collector started (${intervalSeconds}s interval)`);
     while (!stop.signal.aborted) {
       try {
-        await publishUsage(ingestUrl, ingestToken);
+        await publishAllUsage(ingestUrl, ingestToken);
       } catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
       }
@@ -34,12 +35,30 @@ if (dryRun) {
       }
     }
   } else {
-    await publishUsage(ingestUrl, ingestToken);
+    await publishAllUsage(ingestUrl, ingestToken);
   }
 }
 
-async function publishUsage(ingestUrl: string, ingestToken: string): Promise<void> {
-  const report = await readCodexUsage();
+async function publishAllUsage(ingestUrl: string, ingestToken: string): Promise<void> {
+  const jobs = [publishUsage(ingestUrl, ingestToken, "Codex", readCodexUsage)];
+  const claudeUrl = process.env.INKPULSE_CLAUDE_INGEST_URL?.trim();
+  if (claudeUrl) {
+    jobs.push((async () => {
+      validateIngestUrl(claudeUrl);
+      await publishUsage(claudeUrl, requiredEnvironmentVariable("INKPULSE_CLAUDE_INGEST_TOKEN"), "Claude", readClaudeUsage);
+    })());
+  }
+  const results = await Promise.allSettled(jobs);
+  const errors = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (errors.length) throw new Error(errors.map(r => r.reason instanceof Error ? r.reason.message : "Usage collection failed").join("; "));
+}
+
+async function publishUsage(
+  ingestUrl: string, ingestToken: string, provider: string,
+  read: () => Promise<import("../../../packages/contracts/src/usage.js").UsageReport | undefined>,
+): Promise<void> {
+  const report = await read();
+  if (!report) { console.log(provider + ": no measurement available"); return; }
   const response = await fetch(ingestUrl, {
     method: "PUT",
     headers: {
@@ -55,7 +74,7 @@ async function publishUsage(ingestUrl: string, ingestToken: string): Promise<voi
   }
 
   console.log(
-    `Published ${report.windows.length} Codex usage window${report.windows.length === 1 ? "" : "s"} measured at ${report.measuredAt}`,
+    `Published ${report.windows.length} ${provider} usage window${report.windows.length === 1 ? "" : "s"} measured at ${report.measuredAt}`,
   );
 }
 

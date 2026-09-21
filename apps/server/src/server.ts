@@ -18,6 +18,8 @@ export interface ServerOptions {
   displayToken?: string;
   codexIngestToken?: string;
   onCodexUsage?: (report: CodexUsageReport) => Promise<void>;
+  claudeIngestToken?: string;
+  onClaudeUsage?: (report: CodexUsageReport) => Promise<void>;
   refreshAfterSeconds?: number;
 }
 
@@ -60,18 +62,21 @@ async function routeRequest(
     return;
   }
 
-  if (url.pathname === "/api/v1/metrics/codex") {
+  if (url.pathname === "/api/v1/metrics/codex" || url.pathname === "/api/v1/metrics/claude") {
+    const claude = url.pathname.endsWith("/claude");
+    const ingestToken = claude ? options.claudeIngestToken : options.codexIngestToken;
+    const onUsage = claude ? options.onClaudeUsage : options.onCodexUsage;
     if (request.method !== "PUT") {
       response.setHeader("Allow", "PUT");
       sendJson(response, 405, { error: "method_not_allowed" });
       return;
     }
-    if (!options.codexIngestToken || !options.onCodexUsage) {
+    if (!ingestToken || !onUsage) {
       sendJson(response, 404, { error: "not_found" });
       return;
     }
-    if (!isAuthorized(request, options.codexIngestToken)) {
-      response.setHeader("WWW-Authenticate", 'Bearer realm="inkpulse-codex-ingest"');
+    if (!isAuthorized(request, ingestToken)) {
+      response.setHeader("WWW-Authenticate", 'Bearer realm="inkpulse-usage-ingest"');
       sendJson(response, 401, { error: "unauthorized" });
       return;
     }
@@ -86,7 +91,7 @@ async function routeRequest(
         sendJson(response, 400, { error: "measured_at_is_in_the_future" });
         return;
       }
-      await options.onCodexUsage(report);
+      await onUsage(report);
       response.writeHead(204, { "Cache-Control": "no-store" });
       response.end();
     } catch (error) {

@@ -38,7 +38,7 @@ Register-ScheduledTask `
   -Trigger $trigger `
   -Principal $principal `
   -Settings $settings `
-  -Description "Publishes normalized Codex usage to InkPulse every minute while signed in." `
+  -Description "Publishes Codex and optionally Claude Desktop usage to InkPulse every minute while signed in." `
   -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
 Write-Output "Installed and started scheduled task: $taskName"

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { DISPLAY_HEIGHT, DISPLAY_PAGE_IDS, DISPLAY_WIDTH, type DisplayPageId } from "../../../packages/contracts/src/display.js";
 import type { CodexUsageWindow } from "../../../packages/contracts/src/codex.js";
-import type { DashboardData, StockQuote } from "./data.js";
+import type { DashboardData, StockQuote, CodexUsage } from "./data.js";
 
 export interface RenderedPage {
   id: DisplayPageId;
@@ -27,7 +27,8 @@ export async function renderPageSet(data: DashboardData): Promise<RenderedPageSe
   const definitions: Array<{ id: DisplayPageId; title: string; svg: string }> = [
     { id: "overview", title: "Overview", svg: renderOverview(data) },
     { id: "stocks", title: "Stocks", svg: renderStocks(data) },
-    { id: "codex", title: "Codex", svg: renderCodex(data) },
+    // Preserve the wire ID and image URL for existing monitors and devices.
+    { id: "codex", title: "AI usage", svg: renderAiUsage(data) },
   ];
   const rendered = await Promise.all(definitions.map(async ({ id, title, svg }) => {
     const png = await sharp(Buffer.from(svg)).png({ palette: true, colours: 4, dither: 0 }).toBuffer();
@@ -41,32 +42,40 @@ export async function renderPageSet(data: DashboardData): Promise<RenderedPageSe
 }
 
 function renderOverview(data: DashboardData): string {
-  const stocks = data.stocks.slice(0, 6);
-  // Align the final divider with the adjacent column's bottom edge.
-  const rowHeight = (422 - 130 - 19) / Math.max(1, stocks.length - 1);
-  const rows = stocks.map((stock, index) => {
-    const y = 130 + index * rowHeight;
-    return `${text(28, y, stock.symbol, "symbol")}
-      ${text(290, y, price(stock.price), "price", "end")}
-      ${text(456, y, signed(stock.changePercent) + "%", "change", "end")}
-      ${line(28, y + 19, 456, y + 19, light)}`;
+  const stocks = data.stocks.slice(0, 5);
+  const columnWidth = 744 / Math.max(1, stocks.length);
+  const stockColumns = stocks.map((stock, index) => {
+    const x = 28 + index * columnWidth;
+    const center = x + columnWidth / 2;
+    const formattedPrice = price(stock.price);
+    const priceSize = Math.min(30, (columnWidth - 20) / (formattedPrice.length * 0.66));
+    return `${text(center, 129, truncate(stock.symbol, 10), "overview-symbol", "middle")}
+      <text x="${center}" y="168" text-anchor="middle" style="font-size:${priceSize}px;font-weight:700">${escapeXml(formattedPrice)}</text>
+      ${text(center, 198, signed(stock.changePercent) + "%", "overview-symbol", "middle")}
+      ${sparkline(stock, x + 18, 218, columnWidth - 36, 28)}
+      ${index < stocks.length - 1 ? line(x + columnWidth, 112, x + columnWidth, 250, light) : ""}`;
   }).join("");
-  const usage = data.codex.windows.slice(0, 2).map((window, index) => {
-    const y = 128 + index * 144;
-    return `${text(512, y, windowLabel(window), "label")}
-      ${text(512, y + 59, remaining(window) + "%", "summary-number")}
-      ${text(772, y + 57, "LEFT", "label", "end")}
-      ${capacityBar(512, y + 76, 260, remaining(window))}
-      ${text(512, y + 112, "Resets " + formatReset(window.resetsAt), "meta")}`;
+  const usage = providers(data).map(([name, report], index) => {
+    const x = 28 + index * 392;
+    const windows = ["primary", "secondary"].map((id, i) => {
+      const window = report?.windows.find(w => w.id === id);
+      const wx = x + i * 192;
+      return `${text(wx, 348, i ? "WEEKLY" : "5-HOUR", "label")}
+        ${text(wx, 382, window ? remaining(window) + "%" : "—", "overview-usage")}
+        ${window ? capacityBar(wx, 394, 160, remaining(window)) : line(wx, 401, wx + 160, 401, light)}
+        ${window?.resetsAt ? text(wx, 427, "Resets " + formatReset(window.resetsAt), "meta") : ""}`;
+    }).join("");
+    return `${text(x, 318, name, "overview-symbol")}
+      ${text(x + 352, 318, report?.windows.length ? usageStatus(report, data.generatedAt) : "No reading yet", "meta", "end")}${windows}`;
   }).join("");
   return documentSvg("At a glance", "overview", data,
-    `${text(28, 96, data.stocks.length > 6 ? "WATCHLIST / FIRST 6" : "WATCHLIST", "label")}
-     ${text(456, 96, "DAY %", "label", "end")}
-     ${text(512, 96, "CODEX / REMAINING", "label")}
-     ${line(484, 88, 484, 422, light)}
-     ${rows || text(28, 200, "No stock quotes yet", "body")}
-     ${usage || text(512, 206, "Awaiting usage", "body")}
-     ${text(512, 422, data.codex.collectorOnline ? "PC connected" : data.codex.windows.length ? "PC offline / last reading" : "PC offline", "meta")}`,
+    `${text(28, 96, data.stocks.length > 5 ? "WATCHLIST / FIRST 5" : "WATCHLIST", "label")}
+     ${text(772, 96, "USD / DAY CHANGE", "label", "end")}
+     ${stockColumns || text(28, 198, "No stock quotes yet", "body")}
+     ${line(28, 268, 772, 268, ink)}
+     ${text(28, 290, "AI CAPACITY / % LEFT", "label")}
+     ${line(400, 305, 400, 428, light)}
+     ${usage}`,
     stockStatus(data));
 }
 
@@ -93,28 +102,35 @@ function renderStocks(data: DashboardData): string {
     stockStatus(data));
 }
 
-function renderCodex(data: DashboardData): string {
-  const windows = data.codex.windows.slice(0, 2);
-  const panels = windows.map((window, index) => {
+function providers(data: DashboardData): Array<[string, CodexUsage | undefined]> {
+  return [["Codex", data.codex], ["Claude", data.claude]];
+}
+
+function usageStatus(usage: CodexUsage | undefined, now: string): string {
+  if (!usage?.windows.length) return "Awaiting measurement";
+  return (usage.collectorOnline ? "Updated " : "Stale / ") + ageLabel(usage.measuredAt, now);
+}
+
+function renderAiUsage(data: DashboardData): string {
+  const panels = providers(data).map(([name, usage], index) => {
     const x = 28 + index * 392;
-    const left = remaining(window);
-    return `${text(x, 110, windowLabel(window), "label")}
-      ${left <= 10 ? text(x + 352, 110, "LOW", "label", "end") : ""}
-      ${text(x, 228, String(left), "hero")}
-      ${text(x + 352, 226, "%", "percent", "end")}
-      ${text(x, 265, "REMAINING", "label")}
-      ${capacityBar(x, 288, 352, left)}
-      ${text(x, 345, percent(window.usedPercent) + "% used", "body")}
-      ${text(x, 374, "Resets " + formatReset(window.resetsAt), "meta")}`;
+    const rows = (["primary", "secondary"] as const).map((id, row) => {
+      const window = usage?.windows.find(w => w.id === id);
+      const y = 154 + row * 133;
+      return `${text(x, y, row ? "WEEKLY" : "5-HOUR", "label")}
+        ${text(x + 352, y + 44, window ? remaining(window) + "%" : "—", "ai-number", "end")}
+        ${text(x, y + 38, "LEFT", "label")}
+        ${capacityBar(x, y + 60, 352, window ? remaining(window) : 0)}
+        ${window?.resetsAt ? text(x, y + 96, "Resets " + formatReset(window.resetsAt), "meta") : ""}
+        ${window && remaining(window) <= 10 ? text(x + 352, y + 96, "LOW", "label", "end") : ""}`;
+    }).join("");
+    return `${text(x, 111, name, "title")}
+      ${line(x, 124, x + 352, 124, light)}
+      ${rows}
+      ${text(x, 425, usageStatus(usage, data.generatedAt), "meta")}`;
   }).join("");
-  return documentSvg("Codex capacity", "codex", data,
-    `${panels || `${text(28, 194, "Awaiting your first reading", "empty-title")}
-      ${text(28, 230, "Usage appears when the PC collector connects.", "body")}`}
-     ${windows.length > 1 ? line(400, 96, 400, 384, light) : ""}
-     ${line(28, 398, 772, 398, light)}
-     <circle cx="33" cy="420" r="4" fill="${data.codex.collectorOnline ? ink : "#ffffff"}" stroke="${ink}" stroke-width="2"/>
-     ${text(46, 425, data.codex.collectorOnline ? "PC connected" : windows.length ? "PC offline / showing last reading" : "PC offline", "meta")}
-     ${text(772, 425, windows.length ? "Measured " + ageLabel(data.codex.measuredAt, data.generatedAt) : "No measurement", "meta", "end")}`,
+  return documentSvg("AI usage", "codex", data,
+    `${panels}${line(400, 96, 400, 426, light)}`,
     "Capacity bars show remaining allowance");
 }
 
@@ -122,7 +138,7 @@ function documentSvg(title: string, active: DisplayPageId, data: DashboardData, 
   const tabs = DISPLAY_PAGE_IDS.map((id, i) => {
     const x = 591 + i * 66;
     return `${id === active ? `<rect x="${x - 8}" y="448" width="60" height="23" fill="${ink}"/>` : ""}
-      ${text(x + 22, 464, ["HOME", "STOCKS", "CODEX"][i]!, id === active ? "nav selected" : "nav", "middle")}`;
+      ${text(x + 22, 464, ["HOME", "STOCKS", "AI USAGE"][i]!, id === active ? "nav selected" : "nav", "middle")}`;
   }).join("");
   return `<?xml version="1.0" encoding="UTF-8"?>
   <svg xmlns="http://www.w3.org/2000/svg" width="${DISPLAY_WIDTH}" height="${DISPLAY_HEIGHT}" viewBox="0 0 800 480">
@@ -138,10 +154,9 @@ function documentSvg(title: string, active: DisplayPageId, data: DashboardData, 
       .compact { font-size: 18px; font-weight: 700; }
       .meta { font-size: 13px; fill: ${gray}; }
       .body { font-size: 18px; }
-      .summary-number { font-size: 49px; font-weight: 700; letter-spacing: -2px; }
-      .hero { font-size: 112px; font-weight: 700; letter-spacing: -5px; }
-      .percent { font-size: 46px; }
-      .empty-title { font-size: 30px; font-weight: 700; }
+      .overview-symbol { font-size: 20px; font-weight: 700; }
+      .overview-usage { font-size: 36px; font-weight: 700; letter-spacing: -1px; }
+      .ai-number { font-size: 52px; font-weight: 700; letter-spacing: -2px; }
       .footer { font-size: 11px; fill: ${gray}; }
       .nav { font-size: 10px; font-weight: 700; }
       .selected { fill: #ffffff; }
@@ -167,11 +182,12 @@ function line(x1: number, y1: number, x2: number, y2: number, color: string, wid
 }
 
 function capacityBar(x: number, y: number, width: number, value: number): string {
+  const segments = width <= 120 ? 10 : 20;
   const gap = 4;
-  const segment = (width - gap * 19) / 20;
+  const segment = (width - gap * (segments - 1)) / segments;
   const clamped = Math.max(0, Math.min(100, value));
-  return Array.from({ length: 20 }, (_, i) => {
-    const fill = Math.max(0, Math.min(1, clamped / 5 - i));
+  return Array.from({ length: segments }, (_, i) => {
+    const fill = Math.max(0, Math.min(1, clamped / (100 / segments) - i));
     const sx = x + i * (segment + gap);
     return `<rect x="${sx}" y="${y}" width="${segment}" height="14" fill="#ffffff" stroke="${light}"/>
       ${fill > 0 ? `<rect x="${sx}" y="${y}" width="${segment * fill}" height="14" fill="${ink}"/>` : ""}`;
@@ -194,7 +210,6 @@ function remaining(window: CodexUsageWindow): number { return percent(100 - wind
 function signed(value: number): string { return (value > 0 ? "+" : value < 0 ? "−" : "") + Math.abs(value).toFixed(2); }
 function price(value: number): string { return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function truncate(value: string, max: number): string { return value.length > max ? value.slice(0, max - 1) + "…" : value; }
-function windowLabel(window: CodexUsageWindow): string { return truncate(window.label.replace(/ window$/i, "").toUpperCase(), 24); }
 function stockStatus(data: DashboardData): string {
   return `${truncate(data.stockSource.provider.toUpperCase(), 16)} / ${data.stockSource.stale ? "STALE" : "FETCHED"} ${formatTimestamp(data.stockSource.fetchedAt)} UTC`;
 }

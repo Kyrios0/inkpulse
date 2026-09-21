@@ -25,7 +25,8 @@ is visibly marked stale.
 
 1. **Overview** — selected stocks, Codex usage, and update status.
 2. **Stocks** — the complete watchlist with price and daily movement.
-3. **Codex** — usage windows, reset times, and collector freshness.
+3. **AI usage** — Codex and Claude capacity, reset times when available, and
+   independent measurement ages. The wire ID stays `codex` for compatibility.
 
 The E1001's left and right buttons switch between cached pages. The refresh
 button wakes the device and checks the server for updated versions. Page
@@ -57,6 +58,7 @@ Codex credentials, brokerage credentials, or general access to the PC.
 - `GET /api/v1/display/pages/:pageId.png` — rendered four-level grayscale page
 - `GET /health` — process health for deployment checks
 - `PUT /api/v1/metrics/codex` — PC collector upload using a separate write token
+- `PUT /api/v1/metrics/claude` — Claude Desktop usage with its own write token
 
 The display protocol is specified in [docs/display-protocol.md](docs/display-protocol.md).
 The component design and failure behavior are described in
@@ -99,7 +101,8 @@ The display uses a shared monochrome grid with large readings, thin dividers,
 and page indicators. Filled capacity segments mean **remaining** allowance.
 All displayed times are UTC. Mock previews use illustrative JNJ, JPM, META, PG,
 and XLP quotes; they are labeled as sample data. Watchlists above six symbols
-use compact stock rows; the overview shows the first six.
+use compact stock rows; the overview shows the first five in equal columns
+above a pair of AI capacity panels.
 
 ## Stock data
 
@@ -108,6 +111,33 @@ stores the last successful normalized snapshot on disk. Symbols and refresh
 frequency are environment settings. Provider failures preserve cached quotes
 and visibly mark the Stocks page stale; the display is informational and not a
 trading data source.
+
+## Claude Desktop usage
+
+The PC collector reads Claude Desktop's local `plan-usage-history.json` (observed
+version 2: `t` is the sample time, `u.fh` and `u.sd` are used percentages).
+It sends only the newest sample's percentages and original timestamp.
+Reset times are absent in this source, so their display lines remain blank.
+No Claude credentials, account IDs, conversation data, or history leave the PC.
+
+After building, run `npm run collect:claude:check` to inspect normalized data
+without uploading. Windows desktop and Store paths are discovered automatically;
+set `INKPULSE_CLAUDE_USAGE_FILE` on the PC to override the path. macOS and Linux
+conventional paths are also supported, but only Windows has been live-verified.
+Multiple histories or organizations are rejected to avoid mixing accounts.
+
+Enable publishing with PC variables `INKPULSE_CLAUDE_INGEST_URL` (ending in
+`/api/v1/metrics/claude`) and `INKPULSE_CLAUDE_INGEST_TOKEN`. Set the same token on
+the server; it must differ from the display and Codex tokens. `collect:ai` runs
+both collectors. The existing `collect:codex` command and Windows task remain
+compatible and also collect Claude when these variables are configured.
+
+Desktop samples were observed about 15 minutes apart, so one-minute collector
+polling cannot provide one-minute Claude freshness. The default stale threshold
+is 30 minutes; rereading old data never advances its timestamp. Closing Desktop
+leaves the last sample visible. This is an internal cache format, not a supported
+Anthropic API; schema changes fail validation and preserve the last good server
+snapshot. The CLI status-line integration is not required.
 
 ## Codex usage
 

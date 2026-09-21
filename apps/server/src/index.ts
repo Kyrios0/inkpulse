@@ -34,6 +34,9 @@ const codexStaleSeconds = parseSeconds(
   86_400,
 );
 const codexCache = new CodexCache(resolve(dataDirectory, "codex.json"));
+const claudeCache = new CodexCache(resolve(dataDirectory, "claude.json"));
+const claudeStaleSeconds = parseSeconds(process.env.INKPULSE_CLAUDE_STALE_SECONDS ?? "1800",
+  "INKPULSE_CLAUDE_STALE_SECONDS", 60, 86_400);
 const stockService = new StockService(
   new YahooChartProvider(),
   new StockCache(resolve(dataDirectory, "stocks.json")),
@@ -44,6 +47,7 @@ const stockService = new StockService(
 let dashboardData = createMockDashboardData(new Date());
 dashboardData = {
   ...dashboardData,
+  claude: { windows: [], measuredAt: dashboardData.generatedAt, receivedAt: null, collectorOnline: false },
   codex: {
     windows: [],
     measuredAt: dashboardData.generatedAt,
@@ -52,6 +56,13 @@ dashboardData = {
   },
 };
 let codexSnapshot: CodexCacheSnapshot | undefined;
+let claudeSnapshot: CodexCacheSnapshot | undefined;
+try {
+  claudeSnapshot = await claudeCache.load();
+  if (claudeSnapshot) dashboardData = applyUsageSnapshot(dashboardData, claudeSnapshot, "claude");
+} catch {
+  console.error("Could not load the Claude usage cache");
+}
 try {
   codexSnapshot = await codexCache.load();
   if (codexSnapshot) dashboardData = applyCodexSnapshot(dashboardData, codexSnapshot);
@@ -69,6 +80,10 @@ let pageSet = await renderPageSet(dashboardData);
 let dashboardUpdateQueue = Promise.resolve();
 const displayToken = process.env.INKPULSE_DEVICE_TOKEN;
 const codexIngestToken = process.env.INKPULSE_CODEX_INGEST_TOKEN;
+const claudeIngestToken = process.env.INKPULSE_CLAUDE_INGEST_TOKEN;
+if (claudeIngestToken && (claudeIngestToken === displayToken || claudeIngestToken === codexIngestToken)) {
+  throw new Error("Claude, Codex ingest, and display tokens must be different");
+}
 if (displayToken && codexIngestToken && displayToken === codexIngestToken) {
   throw new Error("Display and Codex ingest tokens must be different");
 }
@@ -76,6 +91,7 @@ const server = createInkPulseServer(
   () => pageSet,
   {
     ...(displayToken ? { displayToken } : {}),
+    ...(claudeIngestToken ? { claudeIngestToken, onClaudeUsage: (report: CodexUsageReport) => acceptUsage(report, "claude") } : {}),
     ...(codexIngestToken
       ? { codexIngestToken, onCodexUsage: acceptCodexUsage }
       : {}),
@@ -120,9 +136,10 @@ async function refreshStocks(): Promise<void> {
     }
     await serializeDashboardUpdate(async () => {
       const nextStockData = applyStockState(dashboardData, state);
-      const nextData = codexSnapshot
+      let nextData = codexSnapshot
         ? applyCodexSnapshot(nextStockData, codexSnapshot)
         : nextStockData;
+      if (claudeSnapshot) nextData = applyUsageSnapshot(nextData, claudeSnapshot, "claude");
       const nextPageSet = await renderPageSet(nextData);
       dashboardData = nextData;
       pageSet = nextPageSet;
@@ -137,10 +154,15 @@ async function refreshStocks(): Promise<void> {
 }
 
 async function acceptCodexUsage(report: CodexUsageReport): Promise<void> {
+  return acceptUsage(report, "codex");
+}
+
+async function acceptUsage(report: CodexUsageReport, provider: "codex" | "claude"): Promise<void> {
   await serializeDashboardUpdate(async () => {
+    const snapshot = provider === "codex" ? codexSnapshot : claudeSnapshot;
     if (
-      codexSnapshot &&
-      Date.parse(report.measuredAt) < Date.parse(codexSnapshot.report.measuredAt)
+      snapshot &&
+      Date.parse(report.measuredAt) < Date.parse(snapshot.report.measuredAt)
     ) {
       return;
     }
@@ -150,10 +172,13 @@ async function acceptCodexUsage(report: CodexUsageReport): Promise<void> {
       receivedAt: new Date().toISOString(),
       report,
     };
-    await codexCache.save(nextSnapshot);
-    const nextData = applyCodexSnapshot(dashboardData, nextSnapshot);
+    await (provider === "codex" ? codexCache : claudeCache).save(nextSnapshot);
+    let nextData = applyUsageSnapshot(dashboardData, nextSnapshot, provider);
+    if (provider === "codex" && claudeSnapshot) nextData = applyUsageSnapshot(nextData, claudeSnapshot, "claude");
+    if (provider === "claude" && codexSnapshot) nextData = applyUsageSnapshot(nextData, codexSnapshot, "codex");
     const nextPageSet = await renderPageSet(nextData);
-    codexSnapshot = nextSnapshot;
+    if (provider === "codex") codexSnapshot = nextSnapshot;
+    else claudeSnapshot = nextSnapshot;
     dashboardData = nextData;
     pageSet = nextPageSet;
   });
@@ -178,17 +203,23 @@ function applyCodexSnapshot(
   data: typeof dashboardData,
   snapshot: CodexCacheSnapshot,
 ) {
+  return applyUsageSnapshot(data, snapshot, "codex");
+}
+
+function applyUsageSnapshot(
+  data: typeof dashboardData, snapshot: CodexCacheSnapshot, provider: "codex" | "claude",
+) {
   const now = new Date();
   return {
     ...data,
     generatedAt: now.toISOString(),
-    codex: {
+    [provider]: {
       windows: snapshot.report.windows,
       measuredAt: snapshot.report.measuredAt,
       receivedAt: snapshot.receivedAt,
       collectorOnline:
         now.getTime() - Date.parse(snapshot.report.measuredAt) <=
-        codexStaleSeconds * 1_000,
+        (provider === "codex" ? codexStaleSeconds : claudeStaleSeconds) * 1_000,
     },
   };
 }

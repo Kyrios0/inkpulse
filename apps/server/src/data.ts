@@ -28,6 +28,7 @@ export interface DashboardData {
   stocks: StockQuote[];
   stockSource: StockSourceStatus;
   codex: CodexUsage;
+  claude?: CodexUsage;
   generatedAt: string;
 }
 
@@ -61,6 +62,17 @@ export function createMockDashboardData(
         82.1, 82.3, 82.2, 82.4, 82.3, 82.5, 82.54,
       ], generatedAt),
     ],
+    claude: {
+      collectorOnline: true,
+      measuredAt: generatedAt,
+      receivedAt: generatedAt,
+      windows: [
+        { id: "primary", label: "5-hour window", usedPercent: 22, windowDurationMinutes: 300,
+          resetsAt: null },
+        { id: "secondary", label: "Weekly window", usedPercent: 48, windowDurationMinutes: 10_080,
+          resetsAt: null },
+      ],
+    },
     codex: {
       collectorOnline: true,
       measuredAt: generatedAt,

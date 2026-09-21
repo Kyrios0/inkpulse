@@ -29,11 +29,12 @@ Use shell assignment syntax and restrict the file to its owning user:
 ```sh
 INKPULSE_DEVICE_TOKEN=replace-with-a-random-token
 INKPULSE_CODEX_INGEST_TOKEN=replace-with-a-different-random-token
+INKPULSE_CLAUDE_INGEST_TOKEN=replace-with-a-third-random-token
 ```
 
 The file is sourced immediately before PM2 starts or reloads the service. Do
 not put runtime credentials in the deployment JSON or PM2 configuration.
-Persistent stock and Codex caches live under `SERVICE_PATH/shared/data`; they
+Persistent stock, Codex, and Claude caches live under `SERVICE_PATH/shared/data`; they
 survive atomic release changes and are writable only by the application user.
 The PM2 definition forwards only the documented `INKPULSE_*` settings rather
 than copying the deployment shell's complete environment.
