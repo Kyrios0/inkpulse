@@ -49,7 +49,7 @@ Runtime credentials are provided through environment variables. Their names
 are documented in [.env.example](.env.example); real `.env` files are ignored
 and must never be committed.
 
-The deployment host receives only summarized Codex metrics. It must not contain
+The deployment host receives only summarized AI usage metrics. It must not contain
 Codex credentials, brokerage credentials, or general access to the PC.
 
 ## Interfaces
@@ -57,8 +57,7 @@ Codex credentials, brokerage credentials, or general access to the PC.
 - `GET /api/v1/display/manifest` — page versions and image metadata
 - `GET /api/v1/display/pages/:pageId.png` — rendered four-level grayscale page
 - `GET /health` — process health for deployment checks
-- `PUT /api/v1/metrics/codex` — PC collector upload using a separate write token
-- `PUT /api/v1/metrics/claude` — Claude Desktop usage with its own write token
+- `PUT /api/v1/metrics/codex` — combined Codex and Claude upload using one AI write token; the path remains for ingress compatibility
 
 The display protocol is specified in [docs/display-protocol.md](docs/display-protocol.md).
 The component design and failure behavior are described in
@@ -76,7 +75,7 @@ three PNG pages, ETags, and cache revalidation.
 
 The monitor requires repository variable `INKPULSE_PUBLIC_BASE_URL` and the
 read-only Actions secret `INKPULSE_MONITOR_DEVICE_TOKEN`. It never receives the
-Codex ingest token or any Codex credentials. Run the same probe locally with:
+AI ingest token or any account credentials. Run the same probe locally with:
 
 ```sh
 INKPULSE_PUBLIC_BASE_URL=https://display.example.com \
@@ -135,11 +134,13 @@ set `INKPULSE_CLAUDE_USAGE_FILE` on the PC to override the path. macOS and Linux
 conventional paths are also supported, but only Windows has been live-verified.
 Multiple histories or organizations are rejected to avoid mixing accounts.
 
-Enable publishing with PC variables `INKPULSE_CLAUDE_INGEST_URL` (ending in
-`/api/v1/metrics/claude`) and `INKPULSE_CLAUDE_INGEST_TOKEN`. Set the same token on
-the server; it must differ from the display and Codex tokens. `collect:ai` runs
-both collectors. The existing `collect:codex` command and Windows task remain
-compatible and also collect Claude when these variables are configured.
+The shared `collect:ai` process publishes both providers in one request with
+`INKPULSE_AI_INGEST_TOKEN` to `INKPULSE_AI_INGEST_URL`.
+The token must differ from the read-only display token. The existing
+`collect:codex` command and Windows task remain compatible and now publish both
+providers too. Existing `INKPULSE_CODEX_INGEST_*` settings remain accepted
+temporarily during migration. A URL ending in `/api/v1/metrics` uses the
+existing `/codex` ingress route; old single-provider Codex uploads still work.
 
 Desktop samples were observed about 15 minutes apart, so one-minute collector
 polling cannot provide one-minute Claude freshness. The default stale threshold
@@ -155,12 +156,12 @@ account's rate-limit windows, normalizes them, and uploads only percentages,
 window durations, and reset times. It does not read or upload credential files,
 account identifiers, raw logs, or conversation data.
 
-Create an ignored `.env.local` on the PC with `INKPULSE_CODEX_INGEST_URL` and
-`INKPULSE_CODEX_INGEST_TOKEN`, build once, then run the one-minute collector:
+Create an ignored `.env.local` on the PC with `INKPULSE_AI_INGEST_URL` and
+`INKPULSE_AI_INGEST_TOKEN`, build once, then run the one-minute collector:
 
 ```sh
 npm run build
-npm run collect:codex
+npm run collect:ai
 ```
 
 Use `npm run collect:codex:once -- --dry-run` to verify the local Codex read

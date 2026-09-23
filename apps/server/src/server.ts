@@ -16,10 +16,8 @@ import type { RenderedPageSet } from "./renderer.js";
 
 export interface ServerOptions {
   displayToken?: string;
-  codexIngestToken?: string;
-  onCodexUsage?: (report: CodexUsageReport) => Promise<void>;
-  claudeIngestToken?: string;
-  onClaudeUsage?: (report: CodexUsageReport) => Promise<void>;
+  aiIngestToken?: string;
+  onAiUsage?: (provider: "codex" | "claude", report: CodexUsageReport) => Promise<void>;
   refreshAfterSeconds?: number;
 }
 
@@ -62,20 +60,17 @@ async function routeRequest(
     return;
   }
 
-  if (url.pathname === "/api/v1/metrics/codex" || url.pathname === "/api/v1/metrics/claude") {
-    const claude = url.pathname.endsWith("/claude");
-    const ingestToken = claude ? options.claudeIngestToken : options.codexIngestToken;
-    const onUsage = claude ? options.onClaudeUsage : options.onCodexUsage;
+  if (["/api/v1/metrics/ai", "/api/v1/metrics/codex", "/api/v1/metrics/claude"].includes(url.pathname)) {
     if (request.method !== "PUT") {
       response.setHeader("Allow", "PUT");
       sendJson(response, 405, { error: "method_not_allowed" });
       return;
     }
-    if (!ingestToken || !onUsage) {
+    if (!options.aiIngestToken || !options.onAiUsage) {
       sendJson(response, 404, { error: "not_found" });
       return;
     }
-    if (!isAuthorized(request, ingestToken)) {
+    if (!isAuthorized(request, options.aiIngestToken)) {
       response.setHeader("WWW-Authenticate", 'Bearer realm="inkpulse-usage-ingest"');
       sendJson(response, 401, { error: "unauthorized" });
       return;
@@ -86,12 +81,12 @@ async function routeRequest(
     }
 
     try {
-      const report = parseCodexUsageReport(await readJsonBody(request, 8_192));
-      if (Date.parse(report.measuredAt) > Date.now() + 5 * 60_000) {
+      const reports = parseUsagePayload(await readJsonBody(request, 8_192), url.pathname);
+      if (reports.some(([, report]) => Date.parse(report.measuredAt) > Date.now() + 5 * 60_000)) {
         sendJson(response, 400, { error: "measured_at_is_in_the_future" });
         return;
       }
-      await onUsage(report);
+      for (const [provider, report] of reports) await options.onAiUsage(provider, report);
       response.writeHead(204, { "Cache-Control": "no-store" });
       response.end();
     } catch (error) {
@@ -158,6 +153,30 @@ async function routeRequest(
   }
 
   sendJson(response, 404, { error: "not_found" });
+}
+
+function parseUsagePayload(
+  value: unknown,
+  pathname: string,
+): Array<["codex" | "claude", CodexUsageReport]> {
+  if (pathname === "/api/v1/metrics/claude") {
+    return [["claude", parseCodexUsageReport(value)]];
+  }
+  if (value && typeof value === "object" && "reports" in value) {
+    const batch = value as { schemaVersion?: unknown; reports?: unknown };
+    if (batch.schemaVersion !== 1 || !batch.reports || typeof batch.reports !== "object" || Array.isArray(batch.reports)) {
+      throw new SyntaxError("Invalid AI usage batch");
+    }
+    const reports = batch.reports as Record<string, unknown>;
+    const providers = Object.keys(reports);
+    if (!providers.length || providers.some(provider => provider !== "codex" && provider !== "claude")) {
+      throw new SyntaxError("Invalid AI usage provider");
+    }
+    return providers.map(provider => [provider as "codex" | "claude", parseCodexUsageReport(reports[provider])]);
+  }
+  // Older collectors sent a single Codex report to this route.
+  if (pathname === "/api/v1/metrics/codex") return [["codex", parseCodexUsageReport(value)]];
+  throw new SyntaxError("AI usage batch required");
 }
 
 class RequestBodyError extends Error {

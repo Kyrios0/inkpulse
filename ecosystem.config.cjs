@@ -1,7 +1,8 @@
 const forwardedEnvironment = {};
 for (const name of [
-  "INKPULSE_CLAUDE_INGEST_TOKEN",
+  "INKPULSE_AI_INGEST_TOKEN",
   "INKPULSE_CLAUDE_STALE_SECONDS",
+  // Keep existing deployments working until runtime.env is renamed.
   "INKPULSE_CODEX_INGEST_TOKEN",
   "INKPULSE_CODEX_STALE_SECONDS",
   "INKPULSE_DATA_DIR",

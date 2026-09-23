@@ -79,21 +79,16 @@ try {
 let pageSet = await renderPageSet(dashboardData);
 let dashboardUpdateQueue = Promise.resolve();
 const displayToken = process.env.INKPULSE_DEVICE_TOKEN;
-const codexIngestToken = process.env.INKPULSE_CODEX_INGEST_TOKEN;
-const claudeIngestToken = process.env.INKPULSE_CLAUDE_INGEST_TOKEN;
-if (claudeIngestToken && (claudeIngestToken === displayToken || claudeIngestToken === codexIngestToken)) {
-  throw new Error("Claude, Codex ingest, and display tokens must be different");
-}
-if (displayToken && codexIngestToken && displayToken === codexIngestToken) {
-  throw new Error("Display and Codex ingest tokens must be different");
+const aiIngestToken = process.env.INKPULSE_AI_INGEST_TOKEN || process.env.INKPULSE_CODEX_INGEST_TOKEN;
+if (displayToken && aiIngestToken && displayToken === aiIngestToken) {
+  throw new Error("Display and AI ingest tokens must be different");
 }
 const server = createInkPulseServer(
   () => pageSet,
   {
     ...(displayToken ? { displayToken } : {}),
-    ...(claudeIngestToken ? { claudeIngestToken, onClaudeUsage: (report: CodexUsageReport) => acceptUsage(report, "claude") } : {}),
-    ...(codexIngestToken
-      ? { codexIngestToken, onCodexUsage: acceptCodexUsage }
+    ...(aiIngestToken
+      ? { aiIngestToken, onAiUsage: (provider: "codex" | "claude", report: CodexUsageReport) => acceptUsage(report, provider) }
       : {}),
     refreshAfterSeconds: displayRefreshSeconds,
   },
@@ -151,10 +146,6 @@ async function refreshStocks(): Promise<void> {
   } finally {
     refreshingStocks = false;
   }
-}
-
-async function acceptCodexUsage(report: CodexUsageReport): Promise<void> {
-  return acceptUsage(report, "codex");
 }
 
 async function acceptUsage(report: CodexUsageReport, provider: "codex" | "claude"): Promise<void> {

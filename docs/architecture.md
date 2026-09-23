@@ -14,11 +14,11 @@
 
 The collector reads Codex and Claude Desktop usage locally and uploads only
 normalized summaries. It never uploads session credentials, cookies, API keys,
-conversation data, or raw logs. Independent write-only credentials authorize
-the two ingest operations.
+conversation data, or raw logs. One write-only AI credential authorizes a
+combined upload and cannot read display pages.
 
-The payload records both when Codex produced the measurement and when the VPS
-received it. The renderer can therefore label old data as stale instead of
+Each report records both when its provider produced the measurement and when the
+VPS received it. The renderer can therefore label old data as stale instead of
 presenting it as current.
 
 The implementation launches the installed Codex CLI's local App Server over
@@ -34,8 +34,8 @@ The service runs as an unprivileged application user and has four
 responsibilities:
 
 1. Fetch and cache US stock quotes through a replaceable provider adapter.
-2. Receive and store the latest normalized Codex summary.
-3. Render the overview, stocks, and Codex pages.
+2. Receive and store the latest normalized Codex and Claude summaries.
+3. Render the overview, stocks, and AI usage pages.
 4. Serve a versioned display manifest and immutable page images.
 
 The application binds to a loopback address. Nginx provides the externally
@@ -90,7 +90,7 @@ PC collector ----> AI usage caches -----> renderer --> page cache
 ```text
 apps/
   server/       HTTP API, caches, scheduling, and renderer
-  pc-agent/     Local Codex usage collector
+  pc-agent/     Local AI usage collector
 firmware/
   e1001/        ESP32-S3 device client and button handling
 packages/
