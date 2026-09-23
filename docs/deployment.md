@@ -71,7 +71,7 @@ The deployment performs the following operations:
 2. Copy `dist`, package manifests, and the PM2 definition into a new release.
 3. Run `npm ci --omit=dev` remotely so native packages match Linux.
 4. Atomically point `current` at the new release.
-5. Start or reload the service with PM2.
+5. Replace the PM2 process so it runs the new release's script path.
 6. Check the loopback health endpoint and restore the previous release on
    failure.
 

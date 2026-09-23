@@ -87,7 +87,8 @@ rollback() {
     ln -sfn -- "$previous_release" "$next_link"
     mv -Tf -- "$next_link" "$current_link"
     cd "$current_link"
-    pm2 startOrReload ecosystem.config.cjs --env production --update-env || true
+    pm2 delete inkpulse >/dev/null 2>&1 || true
+    pm2 start ecosystem.config.cjs --env production || true
   else
     rm -f -- "$current_link"
     pm2 delete inkpulse >/dev/null 2>&1 || true
@@ -96,7 +97,10 @@ rollback() {
 trap rollback ERR
 
 cd "$current_link"
-pm2 startOrReload ecosystem.config.cjs --env production --update-env
+# PM2 reload retains the previous release's absolute script path. Start a new
+# process from the updated symlink so code changes reach the live service.
+pm2 delete inkpulse >/dev/null 2>&1 || true
+pm2 start ecosystem.config.cjs --env production
 
 healthy=false
 for _ in {1..10}; do
