@@ -97,6 +97,15 @@ four-level grayscale output, display authorization, manifest ordering, and HTTP
 cache revalidation. `npm run render:mock` writes preview images to
 `output/mock/`; generated output is gitignored.
 
+The E1001 firmware can also be compiled before the hardware arrives:
+
+```sh
+npm run firmware:build
+```
+
+See [`firmware/e1001/README.md`](firmware/e1001/README.md) for the ignored Wi-Fi
+and display-token configuration and the single-upload arrival test.
+
 The display uses a shared monochrome grid with large readings, thin dividers,
 and page indicators. Filled capacity segments mean **remaining** allowance.
 All displayed times are UTC. Mock previews use illustrative JNJ, JPM, META, PG,
@@ -171,5 +180,5 @@ updates while retaining the last reading.
 2. Add the PC Codex collector and freshness handling. **Complete.**
 3. Add a replaceable US-stock provider adapter and server-side cache. **Complete.**
 4. Deploy under an unprivileged account with TLS ingress. **Complete.**
-5. Implement and test E1001 firmware when the hardware arrives.
+5. Prepare E1001 firmware. **Complete; physical panel validation pending delivery.**
 6. Add cross-platform CI and external production monitoring. **Complete.**

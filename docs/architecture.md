@@ -4,7 +4,7 @@
 
 - Present useful information at a glance on a low-power E1001 display.
 - Keep US stock data updating when the user's PC is off.
-- Accept that Codex usage updates only while the PC collector is running.
+- Accept that AI usage updates only while the PC collector is running.
 - Keep firmware simple and make layout changes deployable from the server.
 - Limit the impact of a compromised VPS.
 
@@ -12,9 +12,10 @@
 
 ### PC collector
 
-The collector reads Codex usage locally and uploads only a normalized summary.
-It never uploads Codex session credentials, cookies, API keys, or raw logs. A
-write-only credential authorizes this single operation.
+The collector reads Codex and Claude Desktop usage locally and uploads only
+normalized summaries. It never uploads session credentials, cookies, API keys,
+conversation data, or raw logs. Independent write-only credentials authorize
+the two ingest operations.
 
 The payload records both when Codex produced the measurement and when the VPS
 received it. The renderer can therefore label old data as stale instead of
@@ -43,10 +44,11 @@ separate from other users' PM2 processes.
 
 ### E1001 firmware
 
-The device wakes on schedule or button input, fetches the manifest, and
-downloads only changed pages. It stores the current page index and cached
-images locally. Left and right change the selected page; refresh checks for
-new content.
+The prepared plugged-in firmware stays awake, checks the manifest on its
+declared schedule, and downloads only changed pages. It stores the selected
+page and versioned images in LittleFS. Left and right change the selected page;
+refresh checks for new content. Deep sleep is deferred until measurements can
+be made on the delivered hardware.
 
 The panel keeps its last image without power. Network or service failure must
 therefore leave the last valid page visible rather than clear the screen.
@@ -58,7 +60,7 @@ therefore leave the last valid page visible rather than clear the screen.
 stock provider -->| stock adapter/cache|--+
                   +--------------------+  |
                                             v
-PC collector ----> Codex ingest/cache --> renderer --> page cache
+PC collector ----> AI usage caches -----> renderer --> page cache
                                                    |       |
                                                    |       v
                                                    +--> manifest --> E1001
@@ -67,10 +69,11 @@ PC collector ----> Codex ingest/cache --> renderer --> page cache
 ## Availability rules
 
 - A failed stock fetch preserves the last successful quote and its timestamp.
-- Missing or old Codex data is rendered with a visible stale indicator.
+- Missing or old AI usage data is rendered with a visible stale indicator.
 - A rendering failure preserves the last complete page set.
 - A page set becomes visible only after every image and its manifest are ready.
-- The device retains cached pages and retries later with bounded backoff.
+- The device retains cached pages and retries at the next manifest interval or
+  on a Refresh press.
 
 ## Security boundaries
 
@@ -82,7 +85,7 @@ PC collector ----> Codex ingest/cache --> renderer --> page cache
 - Rate-limit public endpoints and validate every payload at the API boundary.
 - Run the application without sudo and write only below its service/data paths.
 
-## Planned source layout
+## Source layout
 
 ```text
 apps/

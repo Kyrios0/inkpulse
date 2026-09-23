@@ -15,6 +15,11 @@ output/
 node_modules/
 coverage/
 dist/
+.tmp/
+
+# E1001 build output and device-local credentials
+firmware/e1001/.pio/
+firmware/e1001/include/secrets.h
 
 # Local editor and OS files
 .DS_Store
