@@ -49,7 +49,10 @@ async function publishAllUsage(metricsUrl: string, ingestToken: string): Promise
     if (result.status === "rejected") {
       errors.push(result.reason instanceof Error ? result.reason.message : `${provider} collection failed`);
     } else if (result.value) {
-      reports[provider] = result.value;
+      reports[provider] = {
+        ...result.value,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
     } else {
       console.log(`${provider}: no measurement available`);
     }

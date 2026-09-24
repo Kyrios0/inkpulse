@@ -9,6 +9,7 @@ export interface CodexUsageWindow {
 export interface CodexUsageReport {
   schemaVersion: 1;
   measuredAt: string;
+  timeZone?: string;
   windows: CodexUsageWindow[];
 }
 
@@ -21,6 +22,7 @@ export function parseCodexUsageReport(value: unknown): CodexUsageReport {
   if (
     report.schemaVersion !== 1 ||
     !isIsoDate(report.measuredAt) ||
+    (report.timeZone !== undefined && !isTimeZone(report.timeZone)) ||
     !Array.isArray(report.windows) ||
     report.windows.length > 2 ||
     !report.windows.every(isUsageWindow)
@@ -33,6 +35,16 @@ export function parseCodexUsageReport(value: unknown): CodexUsageReport {
   }
 
   return report as CodexUsageReport;
+}
+
+function isTimeZone(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 100) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isUsageWindow(value: unknown): value is CodexUsageWindow {

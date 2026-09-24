@@ -212,6 +212,7 @@ function applyUsageSnapshot(
         now.getTime() - Date.parse(snapshot.report.measuredAt) <=
         (provider === "codex" ? codexStaleSeconds : claudeStaleSeconds) * 1_000,
     },
+    timeZone: snapshot.report.timeZone ?? data.timeZone,
   };
 }
 

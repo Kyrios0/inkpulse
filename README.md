@@ -107,7 +107,9 @@ and display-token configuration and the single-upload arrival test.
 
 The display uses a shared monochrome grid with large readings, thin dividers,
 and page indicators. Filled capacity segments mean **remaining** allowance.
-All displayed times are UTC. Mock previews use illustrative JNJ, JPM, META, PG,
+Displayed times follow the PC's timezone once the collector publishes a reading;
+the timezone is retained while the PC is offline. Before the first reading, times
+use UTC. Mock previews use illustrative JNJ, JPM, META, PG,
 and XLP quotes; they are labeled as sample data. Watchlists above six symbols
 use compact stock rows; the overview shows the first five in equal columns
 above a pair of AI capacity panels.

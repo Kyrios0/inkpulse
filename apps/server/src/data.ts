@@ -25,6 +25,7 @@ export interface StockSourceStatus {
 }
 
 export interface DashboardData {
+  timeZone: string;
   stocks: StockQuote[];
   stockSource: StockSourceStatus;
   codex: CodexUsage;
@@ -38,6 +39,7 @@ export function createMockDashboardData(
   const generatedAt = now.toISOString();
 
   return {
+    timeZone: "UTC",
     generatedAt,
     stockSource: {
       provider: "mock",

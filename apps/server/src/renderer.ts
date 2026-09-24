@@ -63,7 +63,7 @@ function renderOverview(data: DashboardData): string {
       return `${text(wx, 348, i ? "WEEKLY" : "5-HOUR", "label")}
         ${text(wx, 382, window ? remaining(window) + "%" : "—", "overview-usage")}
         ${window ? capacityBar(wx, 394, 160, remaining(window)) : line(wx, 401, wx + 160, 401, light)}
-        ${window?.resetsAt ? text(wx, 427, "Resets " + formatReset(window.resetsAt), "meta") : ""}`;
+        ${window?.resetsAt ? text(wx, 427, "Resets " + formatReset(window.resetsAt, data.timeZone), "meta") : ""}`;
     }).join("");
     return `${text(x, 318, name, "overview-symbol")}
       ${text(x + 352, 318, report?.windows.length ? usageStatus(report, data.generatedAt) : "No reading yet", "meta", "end")}${windows}`;
@@ -121,7 +121,7 @@ function renderAiUsage(data: DashboardData): string {
         ${text(x + 352, y + 44, window ? remaining(window) + "%" : "—", "ai-number", "end")}
         ${text(x, y + 38, "LEFT", "label")}
         ${capacityBar(x, y + 60, 352, window ? remaining(window) : 0)}
-        ${window?.resetsAt ? text(x, y + 96, "Resets " + formatReset(window.resetsAt), "meta") : ""}
+        ${window?.resetsAt ? text(x, y + 96, "Resets " + formatReset(window.resetsAt, data.timeZone), "meta") : ""}
         ${window && remaining(window) <= 10 ? text(x + 352, y + 96, "LOW", "label", "end") : ""}`;
     }).join("");
     return `${text(x, 111, name, "title")}
@@ -163,8 +163,8 @@ function documentSvg(title: string, active: DisplayPageId, data: DashboardData, 
     </style>
     ${text(28, 23, "INKPULSE", "brand")}
     ${text(28, 56, title, "title")}
-    ${text(772, 25, formatTimestamp(data.generatedAt), "label", "end")}
-    ${text(772, 51, data.stockSource.provider === "mock" ? "SAMPLE DATA / UTC" : "ALL TIMES UTC", "meta", "end")}
+    ${text(772, 25, formatTimestamp(data.generatedAt, data.timeZone), "label", "end")}
+    ${text(772, 51, `${data.stockSource.provider === "mock" ? "SAMPLE DATA / " : "TIME / "}${formatTimeZone(data.generatedAt, data.timeZone)}`, "meta", "end")}
     ${line(28, 71, 772, 71, ink, 2)}
     ${body}
     ${line(28, 440, 772, 440, ink)}
@@ -211,14 +211,18 @@ function signed(value: number): string { return (value > 0 ? "+" : value < 0 ? "
 function price(value: number): string { return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function truncate(value: string, max: number): string { return value.length > max ? value.slice(0, max - 1) + "…" : value; }
 function stockStatus(data: DashboardData): string {
-  return `${truncate(data.stockSource.provider.toUpperCase(), 16)} / ${data.stockSource.stale ? "STALE" : "FETCHED"} ${formatTimestamp(data.stockSource.fetchedAt)} UTC`;
+  return `${truncate(data.stockSource.provider.toUpperCase(), 16)} / ${data.stockSource.stale ? "STALE" : "FETCHED"} ${formatTimestamp(data.stockSource.fetchedAt, data.timeZone)} ${formatTimeZone(data.stockSource.fetchedAt, data.timeZone)}`;
 }
-function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }).format(new Date(value)).replace(",", "").toUpperCase();
+export function formatTimestamp(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(new Date(value)).replace(",", "").toUpperCase();
 }
-function formatReset(value: string | null): string {
+export function formatReset(value: string | null, timeZone: string): string {
   if (!value) return "unknown";
-  return new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(new Date(value));
+}
+function formatTimeZone(value: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }).formatToParts(new Date(value));
+  return (parts.find(part => part.type === "timeZoneName")?.value ?? "GMT").replace("GMT", "UTC");
 }
 function ageLabel(measuredAt: string, generatedAt: string): string {
   const minutes = Math.max(0, Math.round((new Date(generatedAt).getTime() - new Date(measuredAt).getTime()) / 60_000));

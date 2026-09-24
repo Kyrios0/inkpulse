@@ -6,7 +6,7 @@ import sharp from "sharp";
 
 import { DISPLAY_PAGE_IDS } from "../../../packages/contracts/src/display.js";
 import { createMockDashboardData } from "../src/data.js";
-import { renderPageSet } from "../src/renderer.js";
+import { formatReset, formatTimestamp, renderPageSet } from "../src/renderer.js";
 import { createInkPulseServer } from "../src/server.js";
 
 test("renderer produces three 800x480 PNGs with at most four gray levels", async () => {
@@ -24,6 +24,13 @@ test("renderer produces three 800x480 PNGs with at most four gray levels", async
     assert.ok(new Set(pixels).size <= 4, `${page.id} exceeded four gray levels`);
     assert.match(page.version, /^sha256:[a-f0-9]{64}$/);
   }
+});
+
+test("display times use the PC timezone, including resets across date boundaries", () => {
+  const instant = "2026-09-24T23:30:00Z";
+  assert.equal(formatTimestamp(instant, "Asia/Shanghai"), "SEP 25 07:30");
+  assert.equal(formatReset(instant, "Asia/Shanghai"), "Fri 07:30");
+  assert.equal(formatTimestamp(instant, "UTC"), "SEP 24 23:30");
 });
 
 test("display API requires its token and supports ETag revalidation", async (context) => {
@@ -88,12 +95,16 @@ test("display API requires its token and supports ETag revalidation", async (con
 
 test("AI ingest validates its separate write token and payload", async (context) => {
   let acceptedPercent: number | undefined;
+  let acceptedTimeZone: string | undefined;
   const pageSet = await renderPageSet(createMockDashboardData());
   const server = createInkPulseServer(pageSet, {
     displayToken: "display-token",
     aiIngestToken: "ingest-token",
     onAiUsage: async (provider, report) => {
-      if (provider === "codex") acceptedPercent = report.windows[0]?.usedPercent;
+      if (provider === "codex") {
+        acceptedPercent = report.windows[0]?.usedPercent;
+        acceptedTimeZone = report.timeZone;
+      }
     },
   });
   await new Promise<void>((resolve, reject) => {
@@ -108,6 +119,7 @@ test("AI ingest validates its separate write token and payload", async (context)
   const payload = {
     schemaVersion: 1,
     measuredAt,
+    timeZone: "Asia/Shanghai",
     windows: [
       {
         id: "primary",
@@ -139,6 +151,13 @@ test("AI ingest validates its separate write token and payload", async (context)
   });
   assert.equal(invalid.status, 400);
 
+  const invalidTimeZone = await fetch(`${baseUrl}/api/v1/metrics/codex`, {
+    method: "PUT",
+    headers: { Authorization: "Bearer ingest-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, timeZone: "Mars/Olympus_Mons" }),
+  });
+  assert.equal(invalidTimeZone.status, 400);
+
   const accepted = await fetch(`${baseUrl}/api/v1/metrics/codex`, {
     method: "PUT",
     headers: {
@@ -149,6 +168,7 @@ test("AI ingest validates its separate write token and payload", async (context)
   });
   assert.equal(accepted.status, 204);
   assert.equal(acceptedPercent, 31);
+  assert.equal(acceptedTimeZone, "Asia/Shanghai");
 
   const cannotReadDisplay = await fetch(`${baseUrl}/api/v1/display/manifest`, {
     headers: { Authorization: "Bearer ingest-token" },
