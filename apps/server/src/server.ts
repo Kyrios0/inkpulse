@@ -12,12 +12,21 @@ import {
   parseCodexUsageReport,
   type CodexUsageReport,
 } from "../../../packages/contracts/src/codex.js";
+import {
+  parseActivityReport,
+  type ActivityReport,
+} from "../../../packages/contracts/src/activity.js";
+import type { PresenceState } from "./presence.js";
 import type { RenderedPageSet } from "./renderer.js";
 
 export interface ServerOptions {
   displayToken?: string;
   aiIngestToken?: string;
   onAiUsage?: (provider: "codex" | "claude", report: CodexUsageReport) => Promise<void>;
+  // Called once per accepted collector post, with its activity block if sent.
+  onCollectorPost?: (activity: ActivityReport | undefined) => void;
+  presence?: () => PresenceState;
+  awayRedrawSeconds?: number;
   refreshAfterSeconds?: number;
 }
 
@@ -81,12 +90,13 @@ async function routeRequest(
     }
 
     try {
-      const reports = parseUsagePayload(await readJsonBody(request, 8_192), url.pathname);
+      const { reports, activity } = parseUsagePayload(await readJsonBody(request, 8_192), url.pathname);
       if (reports.some(([, report]) => Date.parse(report.measuredAt) > Date.now() + 5 * 60_000)) {
         sendJson(response, 400, { error: "measured_at_is_in_the_future" });
         return;
       }
       for (const [provider, report] of reports) await options.onAiUsage(provider, report);
+      options.onCollectorPost?.(activity);
       response.writeHead(204, { "Cache-Control": "no-store" });
       response.end();
     } catch (error) {
@@ -111,7 +121,9 @@ async function routeRequest(
 
   if (request.method === "GET" && url.pathname === "/api/v1/display/manifest") {
     response.setHeader("Cache-Control", "private, no-cache");
-    sendJson(response, 200, buildManifest(pageSet, options.refreshAfterSeconds));
+    const presence = options.presence?.() ?? { presence: "unknown", holdRedraws: false };
+    sendJson(response, 200, buildManifest(pageSet, options.refreshAfterSeconds, presence,
+      options.awayRedrawSeconds ?? 0));
     return;
   }
 
@@ -155,27 +167,34 @@ async function routeRequest(
   sendJson(response, 404, { error: "not_found" });
 }
 
-function parseUsagePayload(
-  value: unknown,
-  pathname: string,
-): Array<["codex" | "claude", CodexUsageReport]> {
+interface UsagePayload {
+  reports: Array<["codex" | "claude", CodexUsageReport]>;
+  activity?: ActivityReport;
+}
+
+function parseUsagePayload(value: unknown, pathname: string): UsagePayload {
   if (pathname === "/api/v1/metrics/claude") {
-    return [["claude", parseCodexUsageReport(value)]];
+    return { reports: [["claude", parseCodexUsageReport(value)]] };
   }
   if (value && typeof value === "object" && "reports" in value) {
-    const batch = value as { schemaVersion?: unknown; reports?: unknown };
+    const batch = value as { schemaVersion?: unknown; reports?: unknown; activity?: unknown };
     if (batch.schemaVersion !== 1 || !batch.reports || typeof batch.reports !== "object" || Array.isArray(batch.reports)) {
       throw new SyntaxError("Invalid AI usage batch");
     }
+    const activity = batch.activity === undefined ? undefined : parseActivityReport(batch.activity);
     const reports = batch.reports as Record<string, unknown>;
     const providers = Object.keys(reports);
-    if (!providers.length || providers.some(provider => provider !== "codex" && provider !== "claude")) {
+    // An activity-only batch keeps presence current when no provider has a reading.
+    if ((!providers.length && !activity) || providers.some(provider => provider !== "codex" && provider !== "claude")) {
       throw new SyntaxError("Invalid AI usage provider");
     }
-    return providers.map(provider => [provider as "codex" | "claude", parseCodexUsageReport(reports[provider])]);
+    return {
+      reports: providers.map(provider => [provider as "codex" | "claude", parseCodexUsageReport(reports[provider])]),
+      ...(activity ? { activity } : {}),
+    };
   }
   // Older collectors sent a single Codex report to this route.
-  if (pathname === "/api/v1/metrics/codex") return [["codex", parseCodexUsageReport(value)]];
+  if (pathname === "/api/v1/metrics/codex") return { reports: [["codex", parseCodexUsageReport(value)]] };
   throw new SyntaxError("AI usage batch required");
 }
 
@@ -205,19 +224,25 @@ function isValidationError(error: unknown): boolean {
   return (
     error instanceof Error &&
     (error.message.startsWith("Invalid Codex") ||
-      error.message.startsWith("Codex usage window"))
+      error.message.startsWith("Codex usage window") ||
+      error.message === "Invalid activity report")
   );
 }
 
 function buildManifest(
   pageSet: RenderedPageSet,
   refreshAfterSeconds: number,
+  presence: PresenceState,
+  awayRedrawSeconds: number,
 ): DisplayManifest {
   return {
     schemaVersion: 1,
     generatedAt: pageSet.generatedAt,
     refreshAfterSeconds,
     defaultPage: "overview",
+    presence: presence.presence,
+    holdRedraws: presence.holdRedraws,
+    awayRedrawSeconds,
     pages: DISPLAY_PAGE_IDS.map((id) => {
       const page = pageSet.pages.get(id);
       if (!page) throw new Error(`Missing rendered page: ${id}`);

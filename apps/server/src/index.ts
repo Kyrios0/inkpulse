@@ -1,9 +1,11 @@
 import { resolve } from "node:path";
 
+import type { ActivityReport } from "../../../packages/contracts/src/activity.js";
 import type { CodexUsageReport } from "../../../packages/contracts/src/codex.js";
 import { CodexCache, type CodexCacheSnapshot } from "./codex/cache.js";
 import { createMockDashboardData } from "./data.js";
-import { renderPageSet } from "./renderer.js";
+import { PresenceTracker, defaultPresenceOptions } from "./presence.js";
+import { aiUsageFingerprint, renderPageSet } from "./renderer.js";
 import { createInkPulseServer } from "./server.js";
 import { StockCache } from "./stocks/cache.js";
 import { StockService, type StockState } from "./stocks/service.js";
@@ -12,7 +14,9 @@ import { YahooChartProvider } from "./stocks/yahoo.js";
 const host = process.env.INKPULSE_LISTEN_HOST ?? "127.0.0.1";
 const port = parsePort(process.env.INKPULSE_LISTEN_PORT ?? "3810");
 const stockRefreshSeconds = parseSeconds(
-  process.env.INKPULSE_STOCK_REFRESH_SECONDS ?? "300",
+  // Fifteen minutes: each changed quote redraws the panel, and the watchlist is
+  // for glancing rather than trading.
+  process.env.INKPULSE_STOCK_REFRESH_SECONDS ?? "900",
   "INKPULSE_STOCK_REFRESH_SECONDS",
   60,
   3_600,
@@ -33,6 +37,18 @@ const codexStaleSeconds = parseSeconds(
   60,
   86_400,
 );
+const presence = new PresenceTracker({
+  enabled: (process.env.INKPULSE_PRESENCE_HOLD ?? "on") !== "off",
+  // Never later than the Codex stale threshold: the "Last reading" label must
+  // not render (and trigger a redraw) before presence has already gone away.
+  collectorOfflineSeconds: Math.min(codexStaleSeconds, parseSeconds(process.env.INKPULSE_COLLECTOR_OFFLINE_SECONDS ??
+    String(defaultPresenceOptions.collectorOfflineSeconds), "INKPULSE_COLLECTOR_OFFLINE_SECONDS", 60, 86_400)),
+  aiReleaseSeconds: parseSeconds(process.env.INKPULSE_AI_RELEASE_SECONDS ??
+    String(defaultPresenceOptions.aiReleaseSeconds), "INKPULSE_AI_RELEASE_SECONDS", 60, 3_600),
+});
+// While away, the device may still show a changed page once an hour. 0 keeps
+// the panel fully held until someone returns.
+const awayRedrawSeconds = parseAwayRedrawSeconds(process.env.INKPULSE_AWAY_REDRAW_SECONDS ?? "3600");
 const codexCache = new CodexCache(resolve(dataDirectory, "codex.json"));
 const claudeCache = new CodexCache(resolve(dataDirectory, "claude.json"));
 const claudeStaleSeconds = parseSeconds(process.env.INKPULSE_CLAUDE_STALE_SECONDS ?? "1800",
@@ -77,6 +93,7 @@ try {
 }
 
 let pageSet = await renderPageSet(dashboardData);
+presence.recordAiFingerprint(aiUsageFingerprint(dashboardData));
 let dashboardUpdateQueue = Promise.resolve();
 const displayToken = process.env.INKPULSE_DEVICE_TOKEN;
 const aiIngestToken = process.env.INKPULSE_AI_INGEST_TOKEN || process.env.INKPULSE_CODEX_INGEST_TOKEN;
@@ -88,8 +105,14 @@ const server = createInkPulseServer(
   {
     ...(displayToken ? { displayToken } : {}),
     ...(aiIngestToken
-      ? { aiIngestToken, onAiUsage: (provider: "codex" | "claude", report: CodexUsageReport) => acceptUsage(report, provider) }
+      ? {
+          aiIngestToken,
+          onAiUsage: (provider: "codex" | "claude", report: CodexUsageReport) => acceptUsage(report, provider),
+          onCollectorPost: (activity: ActivityReport | undefined) => presence.recordPost(activity),
+        }
       : {}),
+    presence: () => presence.state(),
+    awayRedrawSeconds,
     refreshAfterSeconds: displayRefreshSeconds,
   },
 );
@@ -138,6 +161,7 @@ async function refreshStocks(): Promise<void> {
       const nextPageSet = await renderPageSet(nextData);
       dashboardData = nextData;
       pageSet = nextPageSet;
+      presence.recordAiFingerprint(aiUsageFingerprint(nextData));
     });
   } catch (error) {
     if (!refreshAbortController.signal.aborted) {
@@ -172,6 +196,7 @@ async function acceptUsage(report: CodexUsageReport, provider: "codex" | "claude
     else claudeSnapshot = nextSnapshot;
     dashboardData = nextData;
     pageSet = nextPageSet;
+    presence.recordAiFingerprint(aiUsageFingerprint(nextData));
   });
 }
 
@@ -239,6 +264,12 @@ function parseSeconds(
     throw new Error(`Invalid ${variableName}: ${value}`);
   }
   return seconds;
+}
+
+function parseAwayRedrawSeconds(value: string): number {
+  return value.trim() === "0"
+    ? 0
+    : parseSeconds(value, "INKPULSE_AWAY_REDRAW_SECONDS (0 or 600-86400)", 600, 86_400);
 }
 
 function parseSymbols(value: string): string[] {

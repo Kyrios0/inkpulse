@@ -66,7 +66,7 @@ function renderOverview(data: DashboardData): string {
         ${window?.resetsAt ? text(wx, 427, "Resets " + formatReset(window.resetsAt, data.timeZone), "meta") : ""}`;
     }).join("");
     return `${text(x, 318, name, "overview-symbol")}
-      ${text(x + 352, 318, report?.windows.length ? usageStatus(report, data.generatedAt) : "No reading yet", "meta", "end")}${windows}`;
+      ${text(x + 352, 318, report?.windows.length ? usageStatus(report, data.timeZone) : "No reading yet", "meta", "end")}${windows}`;
   }).join("");
   return documentSvg("At a glance", "overview", data,
     `${text(28, 96, data.stocks.length > 5 ? "WATCHLIST / FIRST 5" : "WATCHLIST", "label")}
@@ -106,9 +106,21 @@ function providers(data: DashboardData): Array<[string, CodexUsage | undefined]>
   return [["Codex", data.codex], ["Claude", data.claude]];
 }
 
-function usageStatus(usage: CodexUsage | undefined, now: string): string {
+// No relative ages ("5m ago") or refresh clocks: they change the pixels, and so
+// the page version, on every render without any new information.
+function usageStatus(usage: CodexUsage | undefined, timeZone: string): string {
   if (!usage?.windows.length) return "Awaiting measurement";
-  return (usage.collectorOnline ? "Updated " : "Stale / ") + ageLabel(usage.measuredAt, now);
+  return usage.collectorOnline ? "Live" : "Last reading " + formatTimestamp(usage.measuredAt, timeZone);
+}
+
+// The AI values exactly as the pages display them. It changes only when a
+// rendered AI number, bar, or reset time changes.
+export function aiUsageFingerprint(data: DashboardData): string {
+  return JSON.stringify(providers(data).map(([name, usage]) => [name,
+    (["primary", "secondary"] as const).map(id => {
+      const window = usage?.windows.find(w => w.id === id);
+      return window ? [remaining(window), window.resetsAt ? formatReset(window.resetsAt, data.timeZone) : null] : null;
+    })]));
 }
 
 function renderAiUsage(data: DashboardData): string {
@@ -127,7 +139,7 @@ function renderAiUsage(data: DashboardData): string {
     return `${text(x, 111, name, "title")}
       ${line(x, 124, x + 352, 124, light)}
       ${rows}
-      ${text(x, 425, usageStatus(usage, data.generatedAt), "meta")}`;
+      ${text(x, 425, usageStatus(usage, data.timeZone), "meta")}`;
   }).join("");
   return documentSvg("AI usage", "codex", data,
     `${panels}${line(400, 96, 400, 426, light)}`,
@@ -163,8 +175,8 @@ function documentSvg(title: string, active: DisplayPageId, data: DashboardData, 
     </style>
     ${text(28, 23, "INKPULSE", "brand")}
     ${text(28, 56, title, "title")}
-    ${text(772, 25, formatTimestamp(data.generatedAt, data.timeZone), "label", "end")}
-    ${text(772, 51, `${data.stockSource.provider === "mock" ? "SAMPLE DATA / " : "TIME / "}${formatTimeZone(data.generatedAt, data.timeZone)}`, "meta", "end")}
+    ${text(772, 25, formatDate(data.generatedAt, data.timeZone), "label", "end")}
+    ${text(772, 51, `${data.stockSource.provider === "mock" ? "SAMPLE DATA / " : "TIMES IN "}${formatTimeZone(data.generatedAt, data.timeZone)}`, "meta", "end")}
     ${line(28, 71, 772, 71, ink, 2)}
     ${body}
     ${line(28, 440, 772, 440, ink)}
@@ -205,16 +217,26 @@ function sparkline(stock: StockQuote, x: number, y: number, width: number, heigh
     <circle cx="${x + width}" cy="${py(points[points.length - 1]!)}" r="3" fill="${ink}"/>`;
 }
 
-function percent(value: number): number { return Math.round(Math.max(0, Math.min(100, value)) * 10) / 10; }
+// Whole percents: tenths add visible churn without adding useful information.
+function percent(value: number): number { return Math.round(Math.max(0, Math.min(100, value))); }
 function remaining(window: CodexUsageWindow): number { return percent(100 - window.usedPercent); }
 function signed(value: number): string { return (value > 0 ? "+" : value < 0 ? "−" : "") + Math.abs(value).toFixed(2); }
 function price(value: number): string { return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function truncate(value: string, max: number): string { return value.length > max ? value.slice(0, max - 1) + "…" : value; }
+// Uses the newest market time rather than the fetch time, so a closed market
+// renders identical pixels on every refresh.
 function stockStatus(data: DashboardData): string {
-  return `${truncate(data.stockSource.provider.toUpperCase(), 16)} / ${data.stockSource.stale ? "STALE" : "FETCHED"} ${formatTimestamp(data.stockSource.fetchedAt, data.timeZone)} ${formatTimeZone(data.stockSource.fetchedAt, data.timeZone)}`;
+  const provider = truncate(data.stockSource.provider.toUpperCase(), 16);
+  const times = data.stocks.map(stock => Date.parse(stock.updatedAt)).filter(Number.isFinite);
+  if (!times.length) return `${provider} / ${data.stockSource.stale ? "STALE" : "NO QUOTES"}`;
+  const quotedAt = new Date(Math.max(...times)).toISOString();
+  return `${provider} / ${data.stockSource.stale ? "STALE, " : ""}QUOTES AS OF ${formatTimestamp(quotedAt, data.timeZone)} ${formatTimeZone(quotedAt, data.timeZone)}`;
 }
 export function formatTimestamp(value: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(new Date(value)).replace(",", "").toUpperCase();
+}
+export function formatDate(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "2-digit", timeZone }).format(new Date(value)).replace(/,/g, "").toUpperCase();
 }
 export function formatReset(value: string | null, timeZone: string): string {
   if (!value) return "unknown";
@@ -223,13 +245,6 @@ export function formatReset(value: string | null, timeZone: string): string {
 function formatTimeZone(value: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }).formatToParts(new Date(value));
   return (parts.find(part => part.type === "timeZoneName")?.value ?? "GMT").replace("GMT", "UTC");
-}
-function ageLabel(measuredAt: string, generatedAt: string): string {
-  const minutes = Math.max(0, Math.round((new Date(generatedAt).getTime() - new Date(measuredAt).getTime()) / 60_000));
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
-  return `${Math.floor(minutes / 1440)}d ago`;
 }
 function escapeXml(value: string): string {
   const entities: Record<string, string> = { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" };

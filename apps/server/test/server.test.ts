@@ -175,3 +175,22 @@ test("AI ingest validates its separate write token and payload", async (context)
   });
   assert.equal(cannotReadDisplay.status, 401);
 });
+
+test("page versions do not change with the clock when the data is unchanged", async () => {
+  const data = createMockDashboardData(new Date("2026-09-21T12:00:00Z"));
+  const later = "2026-09-21T12:37:42Z";
+  const before = await renderPageSet(data);
+  const after = await renderPageSet({
+    ...data,
+    generatedAt: later,
+    stockSource: { ...data.stockSource, fetchedAt: later },
+    codex: { ...data.codex, measuredAt: later, receivedAt: later },
+    claude: { ...data.claude!, measuredAt: later, receivedAt: later },
+  });
+  for (const id of DISPLAY_PAGE_IDS) {
+    assert.equal(after.pages.get(id)?.version, before.pages.get(id)?.version, `${id} changed without new data`);
+  }
+
+  const nextDay = await renderPageSet({ ...data, generatedAt: "2026-09-22T12:00:00Z" });
+  assert.notEqual(nextDay.pages.get("overview")?.version, before.pages.get("overview")?.version);
+});

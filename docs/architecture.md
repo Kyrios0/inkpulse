@@ -18,8 +18,12 @@ conversation data, or raw logs. One write-only AI credential authorizes a
 combined upload and cannot read display pages.
 
 Each report records both when its provider produced the measurement and when the
-VPS received it. The renderer can therefore label old data as stale instead of
-presenting it as current.
+VPS received it. On Windows a hidden helper reads input idle time and lock state
+through `GetLastInputInfo` and `WTSQuerySessionInformation`. The PC classifies
+those values into `present`, `away`, or `transition`; exact idle time and lock
+state never leave the PC. The helper needs the signed-in interactive session,
+so the collector is a logon-triggered task rather than a service. The renderer
+can label old data as stale instead of presenting it as current.
 
 The implementation launches the installed Codex CLI's local App Server over
 stdio and calls `account/rateLimits/read`. It uses the existing local sign-in;
@@ -45,7 +49,10 @@ separate from other users' PM2 processes.
 ### E1001 firmware
 
 The prepared plugged-in firmware stays awake, checks the manifest on its
-declared schedule, and downloads only changed pages. It stores the selected
+declared schedule, and downloads only changed pages. Panel refreshes, not
+polling, are what wear the display, so it redraws only when the selected page's
+pixels change and the server does not ask it to hold (see
+[display-protocol.md](display-protocol.md#presence-and-redraw-hold)). It stores the selected
 page and versioned images in LittleFS. Left and right change the selected page;
 refresh checks for new content. Deep sleep is deferred until measurements can
 be made on the delivered hardware.
@@ -64,6 +71,8 @@ PC collector ----> AI usage caches -----> renderer --> page cache
                                                    |       |
                                                    |       v
                                                    +--> manifest --> E1001
+PC collector activity --> presence tracker ----------------^
+                          (present/away, holdRedraws)
 ```
 
 ## Availability rules
@@ -117,11 +126,12 @@ credentialed provider can be added later without changing the renderer.
 
 ## Refresh cadence
 
-Five minutes is the initial server-side stock cadence because the provider is
-requested at five-minute chart granularity. Polling more frequently usually
-retrieves the same bar, creates avoidable load on an unofficial endpoint, and
-raises rate-limit risk. With the default six-symbol watchlist, a five-minute
-cadence produces at most 72 quote requests per hour.
+Fifteen minutes is the default server-side stock cadence. The watchlist is for
+glancing, and every changed quote costs a physical panel refresh while the
+market is open. The provider serves five-minute bars, so polling faster than
+five minutes only repeats the same bar and raises rate-limit risk. With the
+default five-symbol watchlist, a fifteen-minute cadence produces at most 20
+quote requests per hour.
 
 This is a configurable product choice rather than a hardware constraint. The
 device manifest cadence is configured separately. Initial estimates favor a

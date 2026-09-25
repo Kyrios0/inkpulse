@@ -87,6 +87,33 @@ test("stock cache round-trips and partial refresh preserves cached quotes", asyn
   }
 });
 
+test("a transient symbol failure after a complete refresh is not stale", async () => {
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "inkpulse-stocks-"));
+  try {
+    let failMsft = false;
+    const provider: StockProvider = {
+      name: "yahoo",
+      async fetchQuote(symbol) {
+        if (failMsft && symbol === "MSFT") throw new Error("temporary provider failure");
+        return createQuote(symbol, 105, 100);
+      },
+    };
+    const service = new StockService(
+      provider,
+      new StockCache(join(temporaryDirectory, "stocks.json")),
+      ["AAPL", "MSFT"],
+      600_000,
+    );
+    assert.equal((await service.refresh()).source.stale, false);
+    failMsft = true;
+    const state = await service.refresh();
+    assert.equal(state.failures.length, 1);
+    assert.equal(state.source.stale, false);
+  } finally {
+    await rm(temporaryDirectory, { force: true, recursive: true });
+  }
+});
+
 function createQuote(symbol: string, price: number, previousClose: number): StockQuote {
   const change = price - previousClose;
   return {

@@ -1,5 +1,6 @@
 import { readCodexUsage } from "./codex-app-server.js";
 import { readClaudeUsage } from "./claude-desktop.js";
+import { ActivityProbe } from "./activity.js";
 import { setTimeout as wait } from "node:timers/promises";
 import type { UsageReport } from "../../../packages/contracts/src/usage.js";
 
@@ -16,6 +17,7 @@ if (dryRun) {
     process.env.INKPULSE_AI_INTERVAL_SECONDS ?? process.env.INKPULSE_CODEX_INTERVAL_SECONDS ?? "60",
   );
   const metricsUrl = normalizeMetricsUrl(ingestUrl);
+  const activity = new ActivityProbe();
 
   if (watch) {
     const stop = new AbortController();
@@ -25,7 +27,7 @@ if (dryRun) {
     console.log(`InkPulse AI usage collector started (${intervalSeconds}s interval)`);
     while (!stop.signal.aborted) {
       try {
-        await publishAllUsage(metricsUrl, ingestToken);
+        await publishAllUsage(metricsUrl, ingestToken, activity);
       } catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
       }
@@ -35,13 +37,21 @@ if (dryRun) {
         // The stop signal interrupts the pending interval.
       }
     }
+    activity.stop();
   } else {
-    await publishAllUsage(metricsUrl, ingestToken);
+    try {
+      await publishAllUsage(metricsUrl, ingestToken, activity);
+    } finally {
+      activity.stop();
+    }
   }
 }
 
-async function publishAllUsage(metricsUrl: string, ingestToken: string): Promise<void> {
-  const results = await Promise.allSettled([readCodexUsage(), readClaudeUsage()]);
+async function publishAllUsage(metricsUrl: string, ingestToken: string, probe: ActivityProbe): Promise<void> {
+  const [results, activity] = await Promise.all([
+    Promise.allSettled([readCodexUsage(), readClaudeUsage()]),
+    probe.read(),
+  ]);
   const reports: Partial<Record<"codex" | "claude", UsageReport>> = {};
   const errors: string[] = [];
   for (const [index, provider] of (["codex", "claude"] as const).entries()) {
@@ -57,7 +67,8 @@ async function publishAllUsage(metricsUrl: string, ingestToken: string): Promise
       console.log(`${provider}: no measurement available`);
     }
   }
-  if (Object.keys(reports).length === 0) {
+  // Still post activity alone so the server can tell presence from absence.
+  if (Object.keys(reports).length === 0 && !activity) {
     if (errors.length) throw new Error(errors.join("; "));
     return;
   }
@@ -67,7 +78,7 @@ async function publishAllUsage(metricsUrl: string, ingestToken: string): Promise
       Authorization: `Bearer ${ingestToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ schemaVersion: 1, reports }),
+    body: JSON.stringify({ schemaVersion: 1, reports, ...(activity ? { activity } : {}) }),
     signal: AbortSignal.timeout(15_000),
   });
 
