@@ -17,12 +17,14 @@ import {
   type ActivityReport,
 } from "../../../packages/contracts/src/activity.js";
 import type { PresenceState } from "./presence.js";
+import { parseBatteryReport, type BatteryReport } from "../../../packages/contracts/src/battery.js";
 import type { RenderedPageSet } from "./renderer.js";
 
 export interface ServerOptions {
   displayToken?: string;
   aiIngestToken?: string;
   onAiUsage?: (provider: "codex" | "claude", report: CodexUsageReport) => Promise<void>;
+  onBattery?: (report: BatteryReport) => Promise<void>;
   // Called once per accepted collector post, with its activity block if sent.
   onCollectorPost?: (activity: ActivityReport | undefined) => void;
   presence?: () => PresenceState;
@@ -90,12 +92,15 @@ async function routeRequest(
     }
 
     try {
-      const { reports, activity } = parseUsagePayload(await readJsonBody(request, 8_192), url.pathname);
-      if (reports.some(([, report]) => Date.parse(report.measuredAt) > Date.now() + 5 * 60_000)) {
+      const { reports, activity, battery } = parseUsagePayload(await readJsonBody(request, 8_192), url.pathname);
+      if (battery && !options.onBattery) throw new SyntaxError("Battery ingest unavailable");
+      if (reports.some(([, report]) => Date.parse(report.measuredAt) > Date.now() + 5 * 60_000) ||
+          (battery && Date.parse(battery.measuredAt) > Date.now() + 5 * 60_000)) {
         sendJson(response, 400, { error: "measured_at_is_in_the_future" });
         return;
       }
       for (const [provider, report] of reports) await options.onAiUsage(provider, report);
+      if (battery) await options.onBattery!(battery);
       options.onCollectorPost?.(activity);
       response.writeHead(204, { "Cache-Control": "no-store" });
       response.end();
@@ -170,6 +175,7 @@ async function routeRequest(
 interface UsagePayload {
   reports: Array<["codex" | "claude", CodexUsageReport]>;
   activity?: ActivityReport;
+  battery?: BatteryReport;
 }
 
 function parseUsagePayload(value: unknown, pathname: string): UsagePayload {
@@ -177,20 +183,22 @@ function parseUsagePayload(value: unknown, pathname: string): UsagePayload {
     return { reports: [["claude", parseCodexUsageReport(value)]] };
   }
   if (value && typeof value === "object" && "reports" in value) {
-    const batch = value as { schemaVersion?: unknown; reports?: unknown; activity?: unknown };
+    const batch = value as { schemaVersion?: unknown; reports?: unknown; activity?: unknown; battery?: unknown };
     if (batch.schemaVersion !== 1 || !batch.reports || typeof batch.reports !== "object" || Array.isArray(batch.reports)) {
       throw new SyntaxError("Invalid AI usage batch");
     }
     const activity = batch.activity === undefined ? undefined : parseActivityReport(batch.activity);
+    const battery = batch.battery === undefined ? undefined : parseBatteryReport(batch.battery);
     const reports = batch.reports as Record<string, unknown>;
     const providers = Object.keys(reports);
     // An activity-only batch keeps presence current when no provider has a reading.
-    if ((!providers.length && !activity) || providers.some(provider => provider !== "codex" && provider !== "claude")) {
+    if ((!providers.length && !activity && !battery) || providers.some(provider => provider !== "codex" && provider !== "claude")) {
       throw new SyntaxError("Invalid AI usage provider");
     }
     return {
       reports: providers.map(provider => [provider as "codex" | "claude", parseCodexUsageReport(reports[provider])]),
       ...(activity ? { activity } : {}),
+      ...(battery ? { battery } : {}),
     };
   }
   // Older collectors sent a single Codex report to this route.
@@ -225,7 +233,7 @@ function isValidationError(error: unknown): boolean {
     error instanceof Error &&
     (error.message.startsWith("Invalid Codex") ||
       error.message.startsWith("Codex usage window") ||
-      error.message === "Invalid activity report")
+      error.message === "Invalid activity report" || error.message === "Invalid battery report")
   );
 }
 

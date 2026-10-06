@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { DISPLAY_HEIGHT, DISPLAY_PAGE_IDS, DISPLAY_WIDTH, type DisplayPageId } from "../../../packages/contracts/src/display.js";
 import type { CodexUsageWindow } from "../../../packages/contracts/src/codex.js";
 import type { DashboardData, StockQuote, CodexUsage } from "./data.js";
+import { BATTERY_DEVICE_IDS } from "../../../packages/contracts/src/battery.js";
 
 export interface RenderedPage {
   id: DisplayPageId;
@@ -41,19 +42,34 @@ export async function renderPageSet(data: DashboardData): Promise<RenderedPageSe
   return { generatedAt: data.generatedAt, pages };
 }
 
-function renderOverview(data: DashboardData): string {
-  const stocks = data.stocks.slice(0, 5);
-  const columnWidth = 744 / Math.max(1, stocks.length);
-  const stockColumns = stocks.map((stock, index) => {
-    const x = 28 + index * columnWidth;
-    const center = x + columnWidth / 2;
-    const formattedPrice = price(stock.price);
-    const priceSize = Math.min(30, (columnWidth - 20) / (formattedPrice.length * 0.66));
-    return `${text(center, 129, truncate(stock.symbol, 10), "overview-symbol", "middle")}
-      <text x="${center}" y="168" text-anchor="middle" style="font-size:${priceSize}px;font-weight:700">${escapeXml(formattedPrice)}</text>
-      ${text(center, 198, signed(stock.changePercent) + "%", "overview-symbol", "middle")}
-      ${sparkline(stock, x + 18, 218, columnWidth - 36, 28)}
-      ${index < stocks.length - 1 ? line(x + columnWidth, 112, x + columnWidth, 250, light) : ""}`;
+export function renderOverview(data: DashboardData): string {
+  const batteryColumns = BATTERY_DEVICE_IDS.map((id, index) => {
+    const x = 28 + index * 248;
+    const reading = data.battery?.devices.find(device => device.id === id);
+    const raw = reading?.percent ?? null;
+    const age = reading?.observedAt ? Date.parse(data.generatedAt) - Date.parse(reading.observedAt) : Infinity;
+    const recent = age <= 180_000;
+    const current = !!data.battery?.collectorOnline && !!reading?.connected && recent;
+    const unavailable = raw === null || age >= 48 * 60 * 60_000;
+    // Bucket only presentation; preserve the raw cache for threshold decisions.
+    // Positive values below 10 must never look like an empty battery.
+    const value = unavailable ? null : raw < 10 && raw > 0 ? 10 : Math.round(raw / 10) * 10;
+    const low = !unavailable && current && raw <= 20;
+    const stale = !unavailable && !current;
+    const status = raw === null ? "No reading yet"
+      : unavailable ? "Disconnected" : stale ? "Last reading " + formatTimestamp(reading!.observedAt!, data.timeZone) : low ? "LOW BATTERY" : "";
+    const number = value === null ? "—" : raw! > 0 && raw! < 10 ? "<10%" : value + "%";
+    const center = x + 124;
+    const headingX = center - [88, 92, 144][index]! / 2;
+    return `<g class="battery-tile${low ? " battery-low" : stale || unavailable ? " battery-muted" : ""}">
+      ${low ? `<rect x="${x + 10}" y="106" width="228" height="151" rx="3" fill="${ink}"/>` : ""}
+      ${deviceIcon(id, headingX, 115)}
+      ${text(headingX + 34, 135, ["Phone", "Watch", "Headphones"][index]!, "device-label")}
+      ${text(center, 196, number, "battery-number", "middle")}
+      ${value === null ? "" : batteryAccent(x + 26, 218, value)}
+      ${status ? text(center, 248, status, low ? "label" : "meta", "middle") : ""}
+      </g>
+      ${index < 2 ? line(x + 248, 112, x + 248, 253, light) : ""}`;
   }).join("");
   const usage = providers(data).map(([name, report], index) => {
     const x = 28 + index * 392;
@@ -69,14 +85,27 @@ function renderOverview(data: DashboardData): string {
       ${text(x + 352, 318, report?.windows.length ? usageStatus(report, data.timeZone) : "No reading yet", "meta", "end")}${windows}`;
   }).join("");
   return documentSvg("At a glance", "overview", data,
-    `${text(28, 96, data.stocks.length > 5 ? "WATCHLIST / FIRST 5" : "WATCHLIST", "label")}
-     ${text(772, 96, "USD / DAY CHANGE", "label", "end")}
-     ${stockColumns || text(28, 198, "No stock quotes yet", "body")}
+    `${text(28, 96, "DEVICE BATTERIES", "label")}
+     ${batteryColumns}
      ${line(28, 268, 772, 268, ink)}
      ${text(28, 290, "AI CAPACITY / % LEFT", "label")}
      ${line(400, 305, 400, 428, light)}
      ${usage}`,
-    stockStatus(data));
+    "Batteries & AI capacity");
+}
+
+function deviceIcon(id: typeof BATTERY_DEVICE_IDS[number], x: number, y: number): string {
+  const shapes = id === "phone"
+    ? '<rect x="5" y="0" width="15" height="24" rx="3"/><path d="M10 4h5M11 20h3"/>'
+    : id === "watch"
+      ? '<path d="M8 5V0h8v5M8 19v5h8v-5"/><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/>'
+      : '<path d="M3 16v-4a9 9 0 0 1 18 0v4"/><rect x="1" y="13" width="5" height="10" rx="2"/><rect x="18" y="13" width="5" height="10" rx="2"/>';
+  return `<g class="device-icon" transform="translate(${x},${y})" fill="none" stroke="${ink}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shapes}</g>`;
+}
+
+function batteryAccent(x: number, y: number, value: number): string {
+  return Array.from({ length: 10 }, (_, i) =>
+    `<rect class="battery-segment ${i < value / 10 ? "filled" : "empty"}" x="${x + i * 20}" y="${y}" width="16" height="4"/>`).join("");
 }
 
 function renderStocks(data: DashboardData): string {
@@ -169,6 +198,15 @@ function documentSvg(title: string, active: DisplayPageId, data: DashboardData, 
       .overview-symbol { font-size: 20px; font-weight: 700; }
       .overview-usage { font-size: 36px; font-weight: 700; letter-spacing: -1px; }
       .ai-number { font-size: 52px; font-weight: 700; letter-spacing: -2px; }
+      .battery-number { font-size: 48px; font-weight: 700; letter-spacing: -2px; }
+      .device-label { font-size: 18px; font-weight: 700; }
+      .battery-segment.filled { fill: ${ink}; }
+      .battery-segment.empty { fill: #dddddd; }
+      .battery-muted .battery-number, .battery-muted .battery-segment.filled { fill: ${gray}; }
+      .battery-muted .device-icon { stroke: ${gray}; }
+      .battery-low text, .battery-low .battery-segment.filled { fill: #ffffff; }
+      .battery-low .battery-segment.empty { fill: ${gray}; }
+      .battery-low .device-icon { stroke: #ffffff; }
       .footer { font-size: 11px; fill: ${gray}; }
       .nav { font-size: 10px; font-weight: 700; }
       .selected { fill: #ffffff; }
@@ -193,8 +231,7 @@ function line(x1: number, y1: number, x2: number, y2: number, color: string, wid
   return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${width}"/>`;
 }
 
-function capacityBar(x: number, y: number, width: number, value: number): string {
-  const segments = width <= 120 ? 10 : 20;
+function capacityBar(x: number, y: number, width: number, value: number, segments = width <= 120 ? 10 : 20): string {
   const gap = 4;
   const segment = (width - gap * (segments - 1)) / segments;
   const clamped = Math.max(0, Math.min(100, value));

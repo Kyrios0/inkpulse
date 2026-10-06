@@ -1,0 +1,5 @@
+[
+  { "id": "phone", "name": "Your phone's Bluetooth name" },
+  { "id": "watch", "name": "Your watch's Bluetooth name" },
+  { "id": "headphones", "name": "Your headphones' Bluetooth name" }
+]

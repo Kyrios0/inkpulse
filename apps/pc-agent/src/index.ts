@@ -1,6 +1,7 @@
 import { readCodexUsage } from "./codex-app-server.js";
 import { readClaudeUsage } from "./claude-desktop.js";
 import { ActivityProbe } from "./activity.js";
+import { readBatteryUsage } from "./battery.js";
 import { setTimeout as wait } from "node:timers/promises";
 import type { UsageReport } from "../../../packages/contracts/src/usage.js";
 
@@ -8,7 +9,8 @@ const dryRun = process.argv.includes("--dry-run");
 const watch = process.argv.includes("--watch");
 
 if (dryRun) {
-  const report = process.argv.includes("--claude") ? await readClaudeUsage() : await readCodexUsage();
+  const report = process.argv.includes("--battery") ? await readBatteryUsage()
+    : process.argv.includes("--claude") ? await readClaudeUsage() : await readCodexUsage();
   console.log(JSON.stringify(report ?? { status: "no_measurement" }, null, 2));
 } else {
   const ingestUrl = configuredValue("INKPULSE_AI_INGEST_URL", "INKPULSE_CODEX_INGEST_URL");
@@ -48,9 +50,10 @@ if (dryRun) {
 }
 
 async function publishAllUsage(metricsUrl: string, ingestToken: string, probe: ActivityProbe): Promise<void> {
-  const [results, activity] = await Promise.all([
+  const [results, activity, [batteryResult]] = await Promise.all([
     Promise.allSettled([readCodexUsage(), readClaudeUsage()]),
     probe.read(),
+    Promise.allSettled([readBatteryUsage()]),
   ]);
   const reports: Partial<Record<"codex" | "claude", UsageReport>> = {};
   const errors: string[] = [];
@@ -67,8 +70,10 @@ async function publishAllUsage(metricsUrl: string, ingestToken: string, probe: A
       console.log(`${provider}: no measurement available`);
     }
   }
+  const battery = batteryResult.status === "fulfilled" ? batteryResult.value : undefined;
+  if (batteryResult.status === "rejected") errors.push("Bluetooth battery collection failed");
   // Still post activity alone so the server can tell presence from absence.
-  if (Object.keys(reports).length === 0 && !activity) {
+  if (Object.keys(reports).length === 0 && !activity && !battery) {
     if (errors.length) throw new Error(errors.join("; "));
     return;
   }
@@ -78,7 +83,7 @@ async function publishAllUsage(metricsUrl: string, ingestToken: string, probe: A
       Authorization: `Bearer ${ingestToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ schemaVersion: 1, reports, ...(activity ? { activity } : {}) }),
+    body: JSON.stringify({ schemaVersion: 1, reports, ...(activity ? { activity } : {}), ...(battery ? { battery } : {}) }),
     signal: AbortSignal.timeout(15_000),
   });
 
@@ -89,6 +94,7 @@ async function publishAllUsage(metricsUrl: string, ingestToken: string, probe: A
   for (const [provider, report] of Object.entries(reports)) {
     console.log(`Published ${report.windows.length} ${provider} usage windows measured at ${report.measuredAt}`);
   }
+  if (battery) console.log(`Published ${battery.devices.length} battery slots`);
   if (errors.length) throw new Error(errors.join("; "));
 }
 

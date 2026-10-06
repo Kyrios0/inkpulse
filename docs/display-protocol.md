@@ -54,6 +54,8 @@ pixels that change without new information:
   a closed market renders identical pages;
 - AI status reads `Live` or `Last reading <time>`, never a relative age;
 - AI percentages are whole numbers, so every 1 % change still appears;
+- battery display uses 10% buckets and fixed stale labels, not ticking ages;
+  battery changes do not release the AFK hold;
 - `STALE` appears only after stock refreshes have failed for two refresh
   intervals, not after one transient symbol failure.
 

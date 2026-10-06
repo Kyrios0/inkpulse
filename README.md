@@ -1,29 +1,28 @@
 # InkPulse
 
-A low-power e-ink dashboard for US stock updates, Codex usage, and other
-personal real-time data.
+A low-power e-ink dashboard for device batteries, AI usage, and US stocks.
 
 ## Architecture
 
 ```text
 US stock source ---------------------------+
                                             |
-PC Codex collector ---> deployment host ---> rendered page set ---> E1001
+PC collector ---------> deployment host ---> rendered page set ---> E1001
    (PC online only)        cache/API             800 x 480           Wi-Fi pull
 ```
 
 The deployment host is the always-on center of the system. It collects and
-caches stock data, receives summarized Codex usage from the PC, and renders
-display pages. The E1001 periodically pulls a small manifest and only downloads
+caches stock data, receives AI usage and battery summaries from the PC, and
+renders display pages. The E1001 periodically pulls a small manifest and only downloads
 pages whose versions changed.
 
 Rendering lives on the VPS rather than the PC, so stock pages continue to
-update while the PC is offline. Codex data remains at its last known value and
-is visibly marked stale.
+update while the PC is offline. AI and battery data retain their last known
+values with visible stale labels.
 
 ## Version 1 pages
 
-1. **Overview** — selected stocks, Codex usage, and update status.
+1. **Overview** — phone, watch, and headphone batteries above AI capacity.
 2. **Stocks** — the complete watchlist with price and daily movement.
 3. **AI usage** — Codex and Claude capacity, reset times when available, and
    independent measurement ages. The wire ID stays `codex` for compatibility.
@@ -49,15 +48,16 @@ Runtime credentials are provided through environment variables. Their names
 are documented in [.env.example](.env.example); real `.env` files are ignored
 and must never be committed.
 
-The deployment host receives only summarized AI usage metrics. It must not contain
-Codex credentials, brokerage credentials, or general access to the PC.
+The deployment host receives only summarized usage, battery, and coarse presence
+data. It must not contain Codex credentials, brokerage credentials, or general
+access to the PC.
 
 ## Interfaces
 
 - `GET /api/v1/display/manifest` — page versions and image metadata
 - `GET /api/v1/display/pages/:pageId.png` — rendered four-level grayscale page
 - `GET /health` — process health for deployment checks
-- `PUT /api/v1/metrics/codex` — combined Codex and Claude upload using one AI write token; the path remains for ingress compatibility
+- `PUT /api/v1/metrics/codex` — combined AI usage, battery, and presence upload; the path remains for ingress compatibility
 
 The display protocol is specified in [docs/display-protocol.md](docs/display-protocol.md).
 The component design and failure behavior are described in
@@ -111,8 +111,39 @@ Displayed times follow the PC's timezone once the collector publishes a reading;
 the timezone is retained while the PC is offline. Before the first reading, times
 use UTC. Mock previews use illustrative JNJ, JPM, META, PG,
 and XLP quotes; they are labeled as sample data. Watchlists above six symbols
-use compact stock rows; the overview shows the first five in equal columns
-above a pair of AI capacity panels.
+use compact stock rows. The overview shows three battery slots above a pair of
+AI capacity panels; the dedicated Stocks page keeps the full watchlist.
+
+## Device batteries
+
+On Windows, copy `config/battery.example.json` to the ignored
+`config/battery.local.json` and enter each device's exact paired Bluetooth name.
+The optional slots are `phone`, `watch`, and `headphones`; their names and addresses
+remain local. `INKPULSE_BATTERY_CONFIG_FILE` overrides the path. Omit the file to
+disable battery collection. This source is not available from WSL/Linux.
+
+After building, `npm run collect:battery:check` reads batteries without uploading
+or querying AI usage. The existing `collect:ai` process includes readings in its
+one-minute upload. Pixel 9 Pro, Pixel Watch 3, and Bose QC Ultra 2 HP have been
+verified through Windows's System-class Hands-Free HF/AG battery properties.
+The reader checks connection state first; a Bluetooth-class BLE record can hold
+an obsolete value. Phone Link's Calls setup may be needed to establish the phone's
+Bluetooth connection, but its UI and databases are not used by the collector.
+
+Percentages are Windows-reported, potentially rounded or cached—not guaranteed
+one-minute physical measurements. Only slots, percentages, connection state, and
+observation timestamps leave the PC. Charging state is not inferred. Missing or
+expired readings display a dash; disconnections preserve the last reading. Battery changes
+respect the existing AFK hold and do not trigger the AI release exception.
+Unchanged readings produce identical pixels, and no firmware change is needed.
+
+Battery numbers round to the nearest 10% with a thin ten-step accent; positive
+values below 10% show `<10%`. Raw values remain cached: current readings at 20%
+or below invert the tile. Disconnection, an offline collector, or observations older than three
+minutes show a gray `Last reading <timestamp>`; after 48 hours they show a dash
+and `Disconnected`. These ages measure
+PC observations of Windows's cache, not physical device samples. Fixed labels
+avoid clock-driven redraws; AI bars are unchanged.
 
 ## Stock data
 

@@ -10,6 +10,7 @@ export interface StockQuote {
 }
 
 import type { CodexUsageWindow } from "../../../packages/contracts/src/codex.js";
+import type { BatteryReport } from "../../../packages/contracts/src/battery.js";
 
 export interface CodexUsage {
   windows: CodexUsageWindow[];
@@ -30,6 +31,7 @@ export interface DashboardData {
   stockSource: StockSourceStatus;
   codex: CodexUsage;
   claude?: CodexUsage;
+  battery?: BatteryReport & { collectorOnline: boolean };
   generatedAt: string;
 }
 
@@ -41,6 +43,11 @@ export function createMockDashboardData(
   return {
     timeZone: "UTC",
     generatedAt,
+    battery: { schemaVersion: 1, measuredAt: generatedAt, collectorOnline: true, devices: [
+      { id: "phone", percent: 60, connected: true, observedAt: generatedAt },
+      { id: "watch", percent: 70, connected: true, observedAt: generatedAt },
+      { id: "headphones", percent: 90, connected: true, observedAt: generatedAt },
+    ] },
     stockSource: {
       provider: "mock",
       fetchedAt: generatedAt,

@@ -18,6 +18,7 @@
     "collect:codex:once": "node --env-file-if-exists=.env.local dist/apps/pc-agent/src/index.js",
     "collect:ai": "node --env-file-if-exists=.env.local dist/apps/pc-agent/src/index.js --watch",
     "collect:claude:check": "node --env-file-if-exists=.env.local dist/apps/pc-agent/src/index.js --dry-run --claude",
+    "collect:battery:check": "node --env-file-if-exists=.env.local dist/apps/pc-agent/src/index.js --dry-run --battery",
     "monitor:production": "node scripts/check-production.mjs",
     "firmware:build": "node scripts/firmware.mjs build",
     "firmware:upload": "node scripts/firmware.mjs upload",

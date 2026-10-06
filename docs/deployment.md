@@ -34,11 +34,13 @@ INKPULSE_AI_INGEST_TOKEN=replace-with-a-different-random-token
 The file is sourced immediately before PM2 starts the service. Do
 not put runtime credentials in the deployment JSON or PM2 configuration.
 The existing Nginx `/api/v1/metrics/codex` location also carries the combined
-Codex and Claude payload; no additional public ingest route is required.
-Persistent stock, Codex, and Claude caches live under `SERVICE_PATH/shared/data`; they
+AI usage, battery, and presence payload; no additional public ingest route is required.
+Persistent stock, Codex, Claude, and battery caches live under `SERVICE_PATH/shared/data`; they
 survive atomic release changes and are writable only by the application user.
 The PM2 definition forwards only the documented `INKPULSE_*` settings rather
 than copying the deployment shell's complete environment.
+Battery device-name configuration stays on the PC and is not deployed. Updating
+this feature requires the server and PC collector builds, but no firmware flash.
 
 ## First deployment
 

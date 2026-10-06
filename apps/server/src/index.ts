@@ -10,6 +10,8 @@ import { createInkPulseServer } from "./server.js";
 import { StockCache } from "./stocks/cache.js";
 import { StockService, type StockState } from "./stocks/service.js";
 import { YahooChartProvider } from "./stocks/yahoo.js";
+import type { BatteryReport } from "../../../packages/contracts/src/battery.js";
+import { BatteryCache, applyBatterySnapshot, mergeBatteryReport, type BatterySnapshot } from "./battery.js";
 
 const host = process.env.INKPULSE_LISTEN_HOST ?? "127.0.0.1";
 const port = parsePort(process.env.INKPULSE_LISTEN_PORT ?? "3810");
@@ -51,6 +53,7 @@ const presence = new PresenceTracker({
 const awayRedrawSeconds = parseAwayRedrawSeconds(process.env.INKPULSE_AWAY_REDRAW_SECONDS ?? "3600");
 const codexCache = new CodexCache(resolve(dataDirectory, "codex.json"));
 const claudeCache = new CodexCache(resolve(dataDirectory, "claude.json"));
+const batteryCache = new BatteryCache(resolve(dataDirectory, "battery.json"));
 const claudeStaleSeconds = parseSeconds(process.env.INKPULSE_CLAUDE_STALE_SECONDS ?? "1800",
   "INKPULSE_CLAUDE_STALE_SECONDS", 60, 86_400);
 const stockService = new StockService(
@@ -63,6 +66,7 @@ const stockService = new StockService(
 let dashboardData = createMockDashboardData(new Date());
 dashboardData = {
   ...dashboardData,
+  battery: { schemaVersion: 1, measuredAt: dashboardData.generatedAt, devices: [], collectorOnline: false },
   claude: { windows: [], measuredAt: dashboardData.generatedAt, receivedAt: null, collectorOnline: false },
   codex: {
     windows: [],
@@ -73,6 +77,13 @@ dashboardData = {
 };
 let codexSnapshot: CodexCacheSnapshot | undefined;
 let claudeSnapshot: CodexCacheSnapshot | undefined;
+let batterySnapshot: BatterySnapshot | undefined;
+try {
+  batterySnapshot = await batteryCache.load();
+  if (batterySnapshot) dashboardData = applyBatterySnapshot(dashboardData, batterySnapshot);
+} catch {
+  console.error("Could not load the battery cache");
+}
 try {
   claudeSnapshot = await claudeCache.load();
   if (claudeSnapshot) dashboardData = applyUsageSnapshot(dashboardData, claudeSnapshot, "claude");
@@ -108,6 +119,7 @@ const server = createInkPulseServer(
       ? {
           aiIngestToken,
           onAiUsage: (provider: "codex" | "claude", report: CodexUsageReport) => acceptUsage(report, provider),
+          onBattery: (report: BatteryReport) => acceptBattery(report),
           onCollectorPost: (activity: ActivityReport | undefined) => presence.recordPost(activity),
         }
       : {}),
@@ -158,6 +170,7 @@ async function refreshStocks(): Promise<void> {
         ? applyCodexSnapshot(nextStockData, codexSnapshot)
         : nextStockData;
       if (claudeSnapshot) nextData = applyUsageSnapshot(nextData, claudeSnapshot, "claude");
+      if (batterySnapshot) nextData = applyBatterySnapshot(nextData, batterySnapshot);
       const nextPageSet = await renderPageSet(nextData);
       dashboardData = nextData;
       pageSet = nextPageSet;
@@ -191,12 +204,28 @@ async function acceptUsage(report: CodexUsageReport, provider: "codex" | "claude
     let nextData = applyUsageSnapshot(dashboardData, nextSnapshot, provider);
     if (provider === "codex" && claudeSnapshot) nextData = applyUsageSnapshot(nextData, claudeSnapshot, "claude");
     if (provider === "claude" && codexSnapshot) nextData = applyUsageSnapshot(nextData, codexSnapshot, "codex");
+    if (batterySnapshot) nextData = applyBatterySnapshot(nextData, batterySnapshot);
     const nextPageSet = await renderPageSet(nextData);
     if (provider === "codex") codexSnapshot = nextSnapshot;
     else claudeSnapshot = nextSnapshot;
     dashboardData = nextData;
     pageSet = nextPageSet;
     presence.recordAiFingerprint(aiUsageFingerprint(nextData));
+  });
+}
+
+async function acceptBattery(report: BatteryReport): Promise<void> {
+  await serializeDashboardUpdate(async () => {
+    if (batterySnapshot && Date.parse(report.measuredAt) < Date.parse(batterySnapshot.report.measuredAt)) return;
+    const nextSnapshot: BatterySnapshot = { schemaVersion: 1, receivedAt: new Date().toISOString(),
+      report: mergeBatteryReport(batterySnapshot?.report, report) };
+    await batteryCache.save(nextSnapshot);
+    const nextData = applyBatterySnapshot({ ...dashboardData, generatedAt: new Date().toISOString() }, nextSnapshot);
+    const nextPageSet = await renderPageSet(nextData);
+    batterySnapshot = nextSnapshot;
+    dashboardData = nextData;
+    pageSet = nextPageSet;
+    // Battery changes never release the AFK hold; AI release logic is unchanged.
   });
 }
 

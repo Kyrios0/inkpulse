@@ -12,10 +12,16 @@
 
 ### PC collector
 
-The collector reads Codex and Claude Desktop usage locally and uploads only
+The collector reads Codex and Claude Desktop usage and optional Windows Bluetooth
+batteries locally and uploads only
 normalized summaries. It never uploads session credentials, cookies, API keys,
 conversation data, or raw logs. One write-only AI credential authorizes a
-combined upload and cannot read display pages.
+combined upload and cannot read display pages. Battery device names/addresses stay
+in ignored PC configuration; only three fixed slots and their summarized readings
+are uploaded. The battery adapter reads connected System-class Hands-Free records,
+not stale BLE records or Phone Link's UI. Observation time means the PC read Windows's
+cache, not necessarily a new peripheral measurement. Missing readings preserve the
+last good cache; battery updates never release the AFK redraw hold.
 
 Each report records both when its provider produced the measurement and when the
 VPS received it. On Windows a hidden helper reads input idle time and lock state
@@ -38,7 +44,7 @@ The service runs as an unprivileged application user and has four
 responsibilities:
 
 1. Fetch and cache US stock quotes through a replaceable provider adapter.
-2. Receive and store the latest normalized Codex and Claude summaries.
+2. Receive and store the latest normalized AI usage and battery summaries.
 3. Render the overview, stocks, and AI usage pages.
 4. Serve a versioned display manifest and immutable page images.
 
@@ -67,7 +73,7 @@ therefore leave the last valid page visible rather than clear the screen.
 stock provider -->| stock adapter/cache|--+
                   +--------------------+  |
                                             v
-PC collector ----> AI usage caches -----> renderer --> page cache
+PC collector ----> AI/battery caches ----> renderer --> page cache
                                                    |       |
                                                    |       v
                                                    +--> manifest --> E1001
@@ -79,6 +85,11 @@ PC collector activity --> presence tracker ----------------^
 
 - A failed stock fetch preserves the last successful quote and its timestamp.
 - Missing or old AI usage data is rendered with a visible stale indicator.
+- Missing or expired batteries show a dash; disconnected devices and offline collectors
+  retain gray last readings with fixed timestamps until their PC observations
+  are 48 hours old, then show a dash labeled `Disconnected`.
+  Battery display rounds to 10% steps; raw readings determine low-battery alerts.
+  Stocks remain on the dedicated page, not the overview.
 - A rendering failure preserves the last complete page set.
 - A page set becomes visible only after every image and its manifest are ready.
 - The device retains cached pages and retries at the next manifest interval or
@@ -99,7 +110,7 @@ PC collector activity --> presence tracker ----------------^
 ```text
 apps/
   server/       HTTP API, caches, scheduling, and renderer
-  pc-agent/     Local AI usage collector
+  pc-agent/     Local AI usage, battery, and presence collector
 firmware/
   e1001/        ESP32-S3 device client and button handling
 packages/
@@ -112,7 +123,7 @@ used initially, but the rest of InkPulse must not depend on its response shape
 or continued availability.
 
 The first adapter uses Yahoo's unofficial chart endpoint with a conservative
-five-minute default refresh. Responses are validated and normalized before an
+fifteen-minute default refresh. Responses are validated and normalized before an
 atomic cache write. Partial refreshes retain the previous value for failed
 symbols, and a total provider outage keeps the last complete snapshot.
 

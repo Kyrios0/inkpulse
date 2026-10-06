@@ -186,6 +186,8 @@ test("page versions do not change with the clock when the data is unchanged", as
     stockSource: { ...data.stockSource, fetchedAt: later },
     codex: { ...data.codex, measuredAt: later, receivedAt: later },
     claude: { ...data.claude!, measuredAt: later, receivedAt: later },
+    battery: { ...data.battery!, measuredAt: later,
+      devices: data.battery!.devices.map(device => ({ ...device, observedAt: later })) },
   });
   for (const id of DISPLAY_PAGE_IDS) {
     assert.equal(after.pages.get(id)?.version, before.pages.get(id)?.version, `${id} changed without new data`);
