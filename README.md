@@ -1,6 +1,6 @@
 # InkPulse
 
-A low-power e-ink dashboard for device batteries, AI usage, and US stocks, crafted with GPT.
+A low-power e-ink dashboard for device batteries, AI usage, and US stocks, crafted with GPT/Claude.
 
 A PC collector sends local summaries to an always-on server, which fetches stocks
 and renders 800 × 480 grayscale pages. The E1001 downloads changed images over

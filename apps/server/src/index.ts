@@ -13,6 +13,16 @@ import { YahooChartProvider } from "./stocks/yahoo.js";
 import type { BatteryReport } from "../../../packages/contracts/src/battery.js";
 import { BatteryCache, applyBatterySnapshot, mergeBatteryReport, type BatterySnapshot } from "./battery.js";
 
+const displayToken = process.env.INKPULSE_DEVICE_TOKEN;
+const aiIngestToken = process.env.INKPULSE_AI_INGEST_TOKEN || process.env.INKPULSE_CODEX_INGEST_TOKEN;
+if (displayToken && aiIngestToken && displayToken === aiIngestToken) {
+  throw new Error("Display and AI ingest tokens must be different");
+}
+// Without a device token the display endpoints are public. Allow that only for
+// local development; PM2 production always sets NODE_ENV=production.
+if (process.env.NODE_ENV === "production" && !displayToken) {
+  throw new Error("INKPULSE_DEVICE_TOKEN is required in production");
+}
 const host = process.env.INKPULSE_LISTEN_HOST ?? "127.0.0.1";
 const port = parsePort(process.env.INKPULSE_LISTEN_PORT ?? "3810");
 const stockRefreshSeconds = parseSeconds(
@@ -40,7 +50,9 @@ const codexStaleSeconds = parseSeconds(
   86_400,
 );
 const presence = new PresenceTracker({
-  enabled: (process.env.INKPULSE_PRESENCE_HOLD ?? "on") !== "off",
+  // Presence comes only from collector posts. Without an ingest token there
+  // are none, and tracking would hold the panel as permanently away.
+  enabled: (process.env.INKPULSE_PRESENCE_HOLD ?? "on") !== "off" && !!aiIngestToken,
   // Never later than the Codex stale threshold: the "Last reading" label must
   // not render (and trigger a redraw) before presence has already gone away.
   collectorOfflineSeconds: Math.min(codexStaleSeconds, parseSeconds(process.env.INKPULSE_COLLECTOR_OFFLINE_SECONDS ??
@@ -106,11 +118,6 @@ try {
 let pageSet = await renderPageSet(dashboardData);
 presence.recordAiFingerprint(aiUsageFingerprint(dashboardData));
 let dashboardUpdateQueue = Promise.resolve();
-const displayToken = process.env.INKPULSE_DEVICE_TOKEN;
-const aiIngestToken = process.env.INKPULSE_AI_INGEST_TOKEN || process.env.INKPULSE_CODEX_INGEST_TOKEN;
-if (displayToken && aiIngestToken && displayToken === aiIngestToken) {
-  throw new Error("Display and AI ingest tokens must be different");
-}
 const server = createInkPulseServer(
   () => pageSet,
   {
@@ -120,7 +127,7 @@ const server = createInkPulseServer(
           aiIngestToken,
           onAiUsage: (provider: "codex" | "claude", report: CodexUsageReport) => acceptUsage(report, provider),
           onBattery: (report: BatteryReport) => acceptBattery(report),
-          onCollectorPost: (activity: ActivityReport | undefined) => presence.recordPost(activity),
+          onCollectorPost: (activity: ActivityReport | undefined) => finishCollectorPost(activity),
         }
       : {}),
     presence: () => presence.state(),
@@ -164,18 +171,7 @@ async function refreshStocks(): Promise<void> {
     if (state.failures.length > 0) {
       console.error("Some stock quotes could not be refreshed", state.failures);
     }
-    await serializeDashboardUpdate(async () => {
-      const nextStockData = applyStockState(dashboardData, state);
-      let nextData = codexSnapshot
-        ? applyCodexSnapshot(nextStockData, codexSnapshot)
-        : nextStockData;
-      if (claudeSnapshot) nextData = applyUsageSnapshot(nextData, claudeSnapshot, "claude");
-      if (batterySnapshot) nextData = applyBatterySnapshot(nextData, batterySnapshot);
-      const nextPageSet = await renderPageSet(nextData);
-      dashboardData = nextData;
-      pageSet = nextPageSet;
-      presence.recordAiFingerprint(aiUsageFingerprint(nextData));
-    });
+    await serializeDashboardUpdate(() => rebuildPages(applyStockState(dashboardData, state)));
   } catch (error) {
     if (!refreshAbortController.signal.aborted) {
       console.error("Stock refresh failed", error);
@@ -201,16 +197,8 @@ async function acceptUsage(report: CodexUsageReport, provider: "codex" | "claude
       report,
     };
     await (provider === "codex" ? codexCache : claudeCache).save(nextSnapshot);
-    let nextData = applyUsageSnapshot(dashboardData, nextSnapshot, provider);
-    if (provider === "codex" && claudeSnapshot) nextData = applyUsageSnapshot(nextData, claudeSnapshot, "claude");
-    if (provider === "claude" && codexSnapshot) nextData = applyUsageSnapshot(nextData, codexSnapshot, "codex");
-    if (batterySnapshot) nextData = applyBatterySnapshot(nextData, batterySnapshot);
-    const nextPageSet = await renderPageSet(nextData);
     if (provider === "codex") codexSnapshot = nextSnapshot;
     else claudeSnapshot = nextSnapshot;
-    dashboardData = nextData;
-    pageSet = nextPageSet;
-    presence.recordAiFingerprint(aiUsageFingerprint(nextData));
   });
 }
 
@@ -220,13 +208,29 @@ async function acceptBattery(report: BatteryReport): Promise<void> {
     const nextSnapshot: BatterySnapshot = { schemaVersion: 1, receivedAt: new Date().toISOString(),
       report: mergeBatteryReport(batterySnapshot?.report, report) };
     await batteryCache.save(nextSnapshot);
-    const nextData = applyBatterySnapshot({ ...dashboardData, generatedAt: new Date().toISOString() }, nextSnapshot);
-    const nextPageSet = await renderPageSet(nextData);
     batterySnapshot = nextSnapshot;
-    dashboardData = nextData;
-    pageSet = nextPageSet;
-    // Battery changes never release the AFK hold; AI release logic is unchanged.
   });
+}
+
+// Runs after every part of a collector post (Codex, Claude, battery) has been
+// staged. Rendering once per post means the device can never fetch a
+// half-applied page set and spend a full panel refresh on it.
+async function finishCollectorPost(activity: ActivityReport | undefined): Promise<void> {
+  presence.recordPost(activity);
+  await serializeDashboardUpdate(() => rebuildPages(dashboardData));
+}
+
+// Applies every cached snapshot to base and publishes one new page set.
+// Battery changes never release the AFK hold: only the AI fingerprint does.
+async function rebuildPages(base: typeof dashboardData): Promise<void> {
+  let nextData = { ...base, generatedAt: new Date().toISOString() };
+  if (codexSnapshot) nextData = applyUsageSnapshot(nextData, codexSnapshot, "codex");
+  if (claudeSnapshot) nextData = applyUsageSnapshot(nextData, claudeSnapshot, "claude");
+  if (batterySnapshot) nextData = applyBatterySnapshot(nextData, batterySnapshot);
+  const nextPageSet = await renderPageSet(nextData);
+  dashboardData = nextData;
+  pageSet = nextPageSet;
+  presence.recordAiFingerprint(aiUsageFingerprint(nextData));
 }
 
 function serializeDashboardUpdate(operation: () => Promise<void>): Promise<void> {

@@ -52,7 +52,9 @@ may return new bytes, so firmware rejects digest mismatches and retries.
 
 These additive schema-1 fields are ignored by older firmware:
 
-- `presence`: `present`, `away`, or `unknown` when tracking is disabled.
+- `presence`: `present`, `away`, or `unknown` when tracking is disabled
+  (`INKPULSE_PRESENCE_HOLD=off`, or no AI ingest token, since presence comes
+  only from collector posts). `unknown` never holds redraws.
 - `holdRedraws`: hold changed pages while away, except a 180-second window after
   displayed AI values change (`INKPULSE_AI_RELEASE_SECONDS`). Batteries do not release it.
 - `awayRedrawSeconds`: permit a changed page after 3600 seconds since the last

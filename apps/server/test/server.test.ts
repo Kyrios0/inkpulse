@@ -199,3 +199,31 @@ test("page versions do not change with the clock when the data is unchanged", as
   const nextDay = await renderPageSet({ ...data, generatedAt: "2026-09-22T12:00:00Z" });
   assert.notEqual(nextDay.pages.get("overview")?.version, before.pages.get("overview")?.version);
 });
+
+test("a collector post finishes all parts before one awaited completion hook", async (context) => {
+  const events: string[] = [];
+  const data = createMockDashboardData();
+  const server = createInkPulseServer(await renderPageSet(data), {
+    displayToken: "display",
+    aiIngestToken: "ingest",
+    onAiUsage: async (provider) => { events.push(provider); },
+    onCollectorPost: async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      events.push("render");
+    },
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  context.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+  const measuredAt = new Date().toISOString();
+  const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/metrics/codex`, {
+    method: "PUT",
+    headers: { Authorization: "Bearer ingest", "Content-Type": "application/json" },
+    body: JSON.stringify({ schemaVersion: 1, reports: {
+      codex: { schemaVersion: 1, measuredAt, windows: data.codex.windows },
+      claude: { schemaVersion: 1, measuredAt, windows: data.claude!.windows },
+    } }),
+  });
+  assert.equal(response.status, 204);
+  // The 204 arrives only after the single completion hook has finished.
+  assert.deepEqual(events, ["codex", "claude", "render"]);
+});

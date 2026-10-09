@@ -26,8 +26,10 @@ INKPULSE_AI_INGEST_TOKEN=replace-with-a-different-random-token
 INKPULSE_STOCK_SYMBOLS=AAPL,MSFT
 ```
 
-Choose your own 1–12 symbols and nonempty, distinct tokens. Missing display tokens
-allow unauthenticated reads; missing ingest tokens disable writes. Keep account
+Choose your own 1–12 symbols and nonempty, distinct tokens. The server refuses to
+start in production without a display token (outside production a missing
+display token allows unauthenticated reads); missing ingest tokens disable
+writes and presence tracking. Keep account
 credentials on the PC. Never put secrets in deployment JSON or PM2 definitions.
 
 Runtime settings are sourced before PM2 starts. Caches persist under

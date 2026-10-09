@@ -25,8 +25,10 @@ export interface ServerOptions {
   aiIngestToken?: string;
   onAiUsage?: (provider: "codex" | "claude", report: CodexUsageReport) => Promise<void>;
   onBattery?: (report: BatteryReport) => Promise<void>;
-  // Called once per accepted collector post, with its activity block if sent.
-  onCollectorPost?: (activity: ActivityReport | undefined) => void;
+  // Called once per accepted collector post, after onAiUsage/onBattery have
+  // run for every part, with its activity block if sent. It is awaited, so the
+  // post is acknowledged only after any resulting render has completed.
+  onCollectorPost?: (activity: ActivityReport | undefined) => void | Promise<void>;
   presence?: () => PresenceState;
   awayRedrawSeconds?: number;
   refreshAfterSeconds?: number;
@@ -101,7 +103,7 @@ async function routeRequest(
       }
       for (const [provider, report] of reports) await options.onAiUsage(provider, report);
       if (battery) await options.onBattery!(battery);
-      options.onCollectorPost?.(activity);
+      await options.onCollectorPost?.(activity);
       response.writeHead(204, { "Cache-Control": "no-store" });
       response.end();
     } catch (error) {
