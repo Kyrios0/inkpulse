@@ -15,11 +15,12 @@ ISRG Root X1/X2, rejects redirects, and accepts only relative image URLs matchin
 the declared page's route.
 
 Pages are landscape 800 × 480 PNGs with four grayscale levels. The server renders;
-firmware decodes. Wire IDs are `overview`, `stocks`, and `codex` (AI usage).
+firmware decodes. Wire IDs are `overview` and `stocks`; AI usage is on Overview.
+The retired `/api/v1/display/pages/codex.png` returns 404; AI ingest is unchanged.
 
 ## Manifest
 
-Schema 1 example, showing one of the three pages:
+Schema 1 example, showing one of the two pages:
 
 ```json
 {

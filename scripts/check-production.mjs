@@ -8,7 +8,7 @@ const expectedRefreshSeconds = parsePositiveInteger(
   process.env.INKPULSE_MONITOR_EXPECTED_REFRESH_SECONDS ?? "60",
   "INKPULSE_MONITOR_EXPECTED_REFRESH_SECONDS",
 );
-const expectedPageIds = ["overview", "stocks", "codex"];
+const expectedPageIds = ["overview", "stocks"];
 
 const healthResponse = await request(new URL("/health", baseUrl));
 assertStatus(healthResponse, 200, "health endpoint");

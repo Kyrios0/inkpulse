@@ -24,6 +24,7 @@
     "firmware:upload": "node scripts/firmware.mjs upload",
     "firmware:monitor": "node scripts/firmware.mjs monitor",
     "render:mock": "npm run build --silent && node dist/apps/server/src/render-cli.js",
+    "render:docs": "npm run build --silent && node dist/apps/server/src/render-cli.js --docs",
     "start": "node dist/apps/server/src/index.js",
     "pretest": "npm run build",
     "test": "node --test dist/apps/server/test/*.test.js dist/apps/pc-agent/test/*.test.js"

@@ -20,11 +20,12 @@ namespace {
 
 constexpr int kDisplayWidth = 800;
 constexpr int kDisplayHeight = 480;
-constexpr int kPageCountMax = 3;
+constexpr int kPageCountMax = 2;
+constexpr int kLegacyCachePageCountMax = 3;
 constexpr size_t kPackedFrameBytes = (kDisplayWidth * kDisplayHeight) / 2;
 constexpr size_t kManifestBytesMax = 16 * 1024;
 // The 8 MB board partition gives LittleFS 1.5 MB. Keep space for the previous
-// three-page set while the next three images are being downloaded.
+// previous page set while the next images are being downloaded.
 constexpr size_t kPngBytesMax = 192 * 1024;
 constexpr uint32_t kWifiTimeoutMs = 20000;
 constexpr uint32_t kClockTimeoutMs = 20000;
@@ -139,7 +140,7 @@ bool deadlineReached(uint32_t deadline) {
 }
 
 bool isAllowedPageId(const String &id) {
-  return id == "overview" || id == "stocks" || id == "codex";
+  return id == "overview" || id == "stocks";
 }
 
 bool isValidVersion(const String &version) {
@@ -418,7 +419,7 @@ bool parseStateFile(const char *path, PageSet &state) {
   if (error || document["schemaVersion"].as<int>() != 1) return false;
 
   JsonArrayConst pages = document["pages"].as<JsonArrayConst>();
-  if (pages.isNull() || pages.size() == 0 || pages.size() > kPageCountMax) return false;
+  if (pages.isNull() || pages.size() == 0 || pages.size() > kLegacyCachePageCountMax) return false;
 
   PageSet parsed;
   parsed.refreshAfterSeconds = constrain(
@@ -430,6 +431,9 @@ bool parseStateFile(const char *path, PageSet &state) {
     page.title = source["title"] | "";
     page.version = source["version"] | "";
     page.cachePath = source["cachePath"] | "";
+    // Retain useful offline pages when upgrading a three-page cache.
+    if (page.id == "codex") continue;
+    if (parsed.pageCount >= kPageCountMax) return false;
     if (!isAllowedPageId(page.id) || !isValidVersion(page.version) ||
         !isValidCachePath(page.cachePath) || !fileMatchesVersion(page.cachePath, page.version) ||
         findPage(parsed, page.id) >= 0) {
@@ -438,6 +442,7 @@ bool parseStateFile(const char *path, PageSet &state) {
     parsed.pages[parsed.pageCount++] = page;
   }
 
+  if (parsed.pageCount == 0) return false;
   parsed.defaultPage = document["defaultPage"] | "";
   if (findPage(parsed, parsed.defaultPage) < 0) parsed.defaultPage = parsed.pages[0].id;
   state = parsed;

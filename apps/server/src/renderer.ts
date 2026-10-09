@@ -28,8 +28,6 @@ export async function renderPageSet(data: DashboardData): Promise<RenderedPageSe
   const definitions: Array<{ id: DisplayPageId; title: string; svg: string }> = [
     { id: "overview", title: "Overview", svg: renderOverview(data) },
     { id: "stocks", title: "Stocks", svg: renderStocks(data) },
-    // Preserve the wire ID and image URL for existing monitors and devices.
-    { id: "codex", title: "AI usage", svg: renderAiUsage(data) },
   ];
   const rendered = await Promise.all(definitions.map(async ({ id, title, svg }) => {
     const png = await sharp(Buffer.from(svg)).png({ palette: true, colours: 4, dither: 0 }).toBuffer();
@@ -152,34 +150,12 @@ export function aiUsageFingerprint(data: DashboardData): string {
     })]));
 }
 
-function renderAiUsage(data: DashboardData): string {
-  const panels = providers(data).map(([name, usage], index) => {
-    const x = 28 + index * 392;
-    const rows = (["primary", "secondary"] as const).map((id, row) => {
-      const window = usage?.windows.find(w => w.id === id);
-      const y = 154 + row * 133;
-      return `${text(x, y, row ? "WEEKLY" : "5-HOUR", "label")}
-        ${text(x + 352, y + 44, window ? remaining(window) + "%" : "—", "ai-number", "end")}
-        ${text(x, y + 38, "LEFT", "label")}
-        ${capacityBar(x, y + 60, 352, window ? remaining(window) : 0)}
-        ${window?.resetsAt ? text(x, y + 96, "Resets " + formatReset(window.resetsAt, data.timeZone), "meta") : ""}
-        ${window && remaining(window) <= 10 ? text(x + 352, y + 96, "LOW", "label", "end") : ""}`;
-    }).join("");
-    return `${text(x, 111, name, "title")}
-      ${line(x, 124, x + 352, 124, light)}
-      ${rows}
-      ${text(x, 425, usageStatus(usage, data.timeZone), "meta")}`;
-  }).join("");
-  return documentSvg("AI usage", "codex", data,
-    `${panels}${line(400, 96, 400, 426, light)}`,
-    "Capacity bars show remaining allowance");
-}
 
 function documentSvg(title: string, active: DisplayPageId, data: DashboardData, body: string, footer: string): string {
   const tabs = DISPLAY_PAGE_IDS.map((id, i) => {
-    const x = 591 + i * 66;
+    const x = 657 + i * 66;
     return `${id === active ? `<rect x="${x - 8}" y="448" width="60" height="23" fill="${ink}"/>` : ""}
-      ${text(x + 22, 464, ["HOME", "STOCKS", "AI USAGE"][i]!, id === active ? "nav selected" : "nav", "middle")}`;
+      ${text(x + 22, 464, ["HOME", "STOCKS"][i]!, id === active ? "nav selected" : "nav", "middle")}`;
   }).join("");
   return `<?xml version="1.0" encoding="UTF-8"?>
   <svg xmlns="http://www.w3.org/2000/svg" width="${DISPLAY_WIDTH}" height="${DISPLAY_HEIGHT}" viewBox="0 0 800 480">
@@ -197,7 +173,6 @@ function documentSvg(title: string, active: DisplayPageId, data: DashboardData, 
       .body { font-size: 18px; }
       .overview-symbol { font-size: 20px; font-weight: 700; }
       .overview-usage { font-size: 36px; font-weight: 700; letter-spacing: -1px; }
-      .ai-number { font-size: 52px; font-weight: 700; letter-spacing: -2px; }
       .battery-number { font-size: 48px; font-weight: 700; letter-spacing: -2px; }
       .device-label { font-size: 18px; font-weight: 700; }
       .battery-segment.filled { fill: ${ink}; }

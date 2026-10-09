@@ -12,7 +12,7 @@ PC collector -> AI/battery caches+
 | Component | Role |
 | --- | --- |
 | PC collector | Read local usage/batteries; upload normalized summaries and coarse presence |
-| Server | Fetch stocks independently of the PC, persist caches, render all three pages |
+| Server | Fetch stocks independently of the PC, persist caches, render Overview and Stocks |
 | E1001 | Validate/cache images, navigate locally, redraw changed selected pages subject to holds |
 
 The server defaults to loopback behind a TLS reverse proxy and runs under an

@@ -1,16 +1,22 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { createMockDashboardData } from "./data.js";
 import { renderPageSet } from "./renderer.js";
 
 const outputDirectory = resolve("output", "mock");
+// Explicitly opt in: only synthetic fixtures may be published in repository docs.
+const publishPreviews = process.argv.includes("--docs");
+const docsDirectory = resolve("docs", "previews");
 const pageSet = await renderPageSet(createMockDashboardData());
 
 await mkdir(outputDirectory, { recursive: true });
+await rm(resolve(outputDirectory, "codex.png"), { force: true });
+if (publishPreviews) await mkdir(docsDirectory, { recursive: true });
 for (const page of pageSet.pages.values()) {
   const outputPath = resolve(outputDirectory, `${page.id}.png`);
   await writeFile(outputPath, page.png);
+  if (publishPreviews) await writeFile(resolve(docsDirectory, `${page.id}.png`), page.png);
   console.log(`${page.id}: ${outputPath} (${page.png.length} bytes)`);
 }
 

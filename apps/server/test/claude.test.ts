@@ -31,7 +31,7 @@ test("AI ingest accepts a combined Codex and Claude batch with one write token",
   assert.equal(accepted.length, 2);
   assert.equal((await put("ai-usage", { ...batch, reports: { other: report } })).status, 400);
   assert.equal((await fetch(base + "/api/v1/display/manifest", { headers: { Authorization: "Bearer ai-usage" } })).status, 401);
-  assert.equal(pages.pages.get("codex")?.title, "AI usage");
+  assert.equal(pages.pages.get("overview")?.title, "Overview");
 });
 
 test("AI renderer handles absent Claude and independently stale providers", async () => {
@@ -41,6 +41,6 @@ test("AI renderer handles absent Claude and independently stale providers", asyn
   data.codex.collectorOnline = false;
   data.codex.windows = [];
   const empty = await renderPageSet(data);
-  assert.notEqual(absent.pages.get("codex")?.version, empty.pages.get("codex")?.version);
-  assert.equal(empty.pages.size, 3);
+  assert.notEqual(absent.pages.get("overview")?.version, empty.pages.get("overview")?.version);
+  assert.equal(empty.pages.size, 2);
 });

@@ -133,7 +133,7 @@ async function routeRequest(
   }
 
   const pageMatch = url.pathname.match(
-    /^\/api\/v1\/display\/pages\/(overview|stocks|codex)\.png$/,
+    /^\/api\/v1\/display\/pages\/(overview|stocks)\.png$/,
   );
   if (request.method === "GET" && pageMatch) {
     const pageId = pageMatch[1] as DisplayPageId;

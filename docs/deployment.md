@@ -73,5 +73,10 @@ Set repository variable `INKPULSE_PUBLIC_BASE_URL` and read-only secret
 Without the URL the job skips. Scheduled runs may be delayed.
 
 Locally, provide those environment variables and run `npm run monitor:production`.
-It checks HTTPS health, authentication, manifest freshness, three PNGs, ETags,
+It checks HTTPS health, authentication, manifest freshness, two PNGs, ETags,
 and cache revalidation. It never needs the write token or account credentials.
+
+For the two-page upgrade, deploy the server before flashing new firmware and
+update the monitor alongside it. Previous firmware accepts two-page manifests;
+new firmware migrates legacy caches, dropping the retired AI page. AI ingest
+and the Overview's AI section are unchanged.

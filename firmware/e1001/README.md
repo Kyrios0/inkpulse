@@ -2,6 +2,9 @@
 
 PlatformIO client for reTerminal E1001: ESP32-S3, UC8179, 800 × 480 four-gray panel.
 Current firmware stays awake with Wi-Fi enabled; deep sleep is future work.
+Pages are Overview (including AI usage) and Stocks. Legacy three-page caches
+retain these two pages during upgrade; a retired selection falls back to Overview.
+Deploy the two-page server before flashing this firmware.
 
 ## Configure, build, flash
 

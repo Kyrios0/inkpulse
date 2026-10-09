@@ -9,13 +9,18 @@ their last known values with freshness labels.
 
 ## Pages
 
-- **Overview:** phone, watch, and headphone batteries above AI capacity.
+- **Overview:** device batteries plus Codex/Claude capacity and available reset times.
 - **Stocks:** your configured watchlist, daily changes, and price trends.
-- **AI usage:** Codex and Claude capacity, with reset times when available.
 
 Left/right buttons switch cached pages; Refresh checks the server. Current
 firmware stays awake and is intended for plugged-in use. Unchanged images do not
 redraw; AFK holds further reduce panel refreshes.
+
+## Preview
+
+Synthetic sample data, not live readings. Regenerate with `npm run render:docs`.
+
+![Overview preview](docs/previews/overview.png)
 
 ## Try locally
 

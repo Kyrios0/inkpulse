@@ -65,7 +65,7 @@ test("battery polling does not change pixels, affect other pages, or release AFK
     device.id === "phone" ? { ...device, percent: 50 } : device) } };
   const changed = await renderPageSet(changedData);
   assert.notEqual(changed.pages.get("overview")?.version, original.pages.get("overview")?.version);
-  for (const id of ["stocks", "codex"] as const) assert.equal(changed.pages.get(id)?.version, original.pages.get(id)?.version);
+  assert.equal(changed.pages.get("stocks")?.version, original.pages.get("stocks")?.version);
   const stockChanged = await renderPageSet({ ...data, stocks: data.stocks.map(stock => ({ ...stock, price: stock.price + 1 })) });
   assert.equal(stockChanged.pages.get("overview")?.version, original.pages.get("overview")?.version);
   const presence = new PresenceTracker();

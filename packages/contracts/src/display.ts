@@ -1,6 +1,6 @@
 export const DISPLAY_WIDTH = 800;
 export const DISPLAY_HEIGHT = 480;
-export const DISPLAY_PAGE_IDS = ["overview", "stocks", "codex"] as const;
+export const DISPLAY_PAGE_IDS = ["overview", "stocks"] as const;
 
 export type DisplayPageId = (typeof DISPLAY_PAGE_IDS)[number];
 

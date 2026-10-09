@@ -9,9 +9,10 @@ import { createMockDashboardData } from "../src/data.js";
 import { formatReset, formatTimestamp, renderPageSet } from "../src/renderer.js";
 import { createInkPulseServer } from "../src/server.js";
 
-test("renderer produces three 800x480 PNGs with at most four gray levels", async () => {
+test("renderer produces only overview and stocks as 800x480 four-gray PNGs", async () => {
   const pageSet = await renderPageSet(createMockDashboardData());
   assert.deepEqual([...pageSet.pages.keys()], [...DISPLAY_PAGE_IDS]);
+  assert.deepEqual([...pageSet.pages.keys()], ["overview", "stocks"]);
 
   for (const page of pageSet.pages.values()) {
     const image = sharp(page.png);
@@ -50,11 +51,13 @@ test("display API requires its token and supports ETag revalidation", async (con
 
   const health = await fetch(`${baseUrl}/health`);
   assert.equal(health.status, 200);
+  assert.equal(((await health.json()) as { pages: number }).pages, 2);
 
   const unauthorized = await fetch(`${baseUrl}/api/v1/display/manifest`);
   assert.equal(unauthorized.status, 401);
 
   const headers = { Authorization: "Bearer test-token" };
+  assert.equal((await fetch(`${baseUrl}/api/v1/display/pages/codex.png`, { headers })).status, 404);
   const manifestResponse = await fetch(`${baseUrl}/api/v1/display/manifest`, {
     headers,
   });
