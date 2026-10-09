@@ -77,8 +77,9 @@ Refresh checks the server, not the upstream stock provider. Device polling
 ## Cache and panel updates
 
 1. Fetch/validate the manifest and download changed images.
-2. Verify PNG signature, dimensions, and SHA-256; commit the LittleFS page set
-   only after every changed page passes.
+2. Verify each download's SHA-256 against the manifest version; commit the
+   LittleFS page set only after every changed page passes. Cached pages are
+   re-verified at boot, and the decoder rejects images that are not 800 x 480.
 3. Draw the selected page if needed and permitted. Holds never hide the initial
    page; held updates remain cached until a button, interval exception, or release.
 4. On failure, keep the existing cache and image; retry on the next check.

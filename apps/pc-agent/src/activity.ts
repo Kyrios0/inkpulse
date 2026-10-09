@@ -46,12 +46,10 @@ interface LocalActivity {
 }
 
 export function parseActivityLine(line: string): LocalActivity | undefined {
-  const match = /^(-?\d+) (-?1|0)$/.exec(line.trim());
-  if (!match) return undefined;
-  const idleSeconds = Number(match[1]);
-  if (!Number.isSafeInteger(idleSeconds) || idleSeconds < 0 || idleSeconds > 4_294_967) return undefined;
-  // An unknown lock state (-1) falls back to idle time alone.
-  return { idleSeconds, locked: match[2] === "1" };
+  // -1 idle means GetLastInputInfo failed. An unknown lock state (-1) falls
+  // back to idle time alone.
+  const match = /^(\d+) (-?1|0)$/.exec(line.trim());
+  return match ? { idleSeconds: Number(match[1]), locked: match[2] === "1" } : undefined;
 }
 
 export function classifyActivity(activity: LocalActivity, presentWithinSeconds: number,

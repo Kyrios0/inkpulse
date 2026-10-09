@@ -139,12 +139,7 @@ async function routeRequest(
   );
   if (request.method === "GET" && pageMatch) {
     const pageId = pageMatch[1] as DisplayPageId;
-    const page = pageSet.pages.get(pageId);
-    if (!page) {
-      sendJson(response, 404, { error: "page_not_found" });
-      return;
-    }
-
+    const page = pageSet.pages.get(pageId)!;
     const etag = `"${page.version}"`;
     if (request.headers["if-none-match"] === etag) {
       response.writeHead(304, { ETag: etag });
@@ -254,9 +249,7 @@ function buildManifest(
     holdRedraws: presence.holdRedraws,
     awayRedrawSeconds,
     pages: DISPLAY_PAGE_IDS.map((id) => {
-      const page = pageSet.pages.get(id);
-      if (!page) throw new Error(`Missing rendered page: ${id}`);
-
+      const page = pageSet.pages.get(id)!;
       return {
         id,
         title: page.title,

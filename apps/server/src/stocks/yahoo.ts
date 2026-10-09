@@ -1,8 +1,6 @@
 import type { StockQuote } from "../data.js";
 import type { StockProvider } from "./provider.js";
 
-const symbolPattern = /^[A-Z][A-Z0-9.-]{0,14}$/;
-
 export class YahooChartProvider implements StockProvider {
   readonly name = "yahoo";
 
@@ -12,12 +10,7 @@ export class YahooChartProvider implements StockProvider {
   ) {}
 
   async fetchQuote(symbol: string, signal?: AbortSignal): Promise<StockQuote> {
-    const normalizedSymbol = symbol.trim().toUpperCase();
-    if (!symbolPattern.test(normalizedSymbol)) {
-      throw new Error(`Invalid US stock symbol: ${symbol}`);
-    }
-
-    const url = new URL(`${this.baseUrl}/${encodeURIComponent(normalizedSymbol)}`);
+    const url = new URL(`${this.baseUrl}/${encodeURIComponent(symbol)}`);
     url.searchParams.set("range", "1d");
     url.searchParams.set("interval", "5m");
     url.searchParams.set("includePrePost", "false");
@@ -35,10 +28,10 @@ export class YahooChartProvider implements StockProvider {
     });
 
     if (!response.ok) {
-      throw new Error(`Yahoo returned HTTP ${response.status} for ${normalizedSymbol}`);
+      throw new Error(`Yahoo returned HTTP ${response.status} for ${symbol}`);
     }
 
-    return parseYahooChartResponse(await response.json(), normalizedSymbol);
+    return parseYahooChartResponse(await response.json(), symbol);
   }
 }
 

@@ -10,8 +10,7 @@ export function parseActivityReport(value: unknown): ActivityReport {
     throw new Error("Invalid activity report");
   }
   const report = value as Record<string, unknown>;
-  if (Object.keys(report).length !== 1 ||
-      (report.presence !== "present" && report.presence !== "away" && report.presence !== "transition")) {
+  if (report.presence !== "present" && report.presence !== "away" && report.presence !== "transition") {
     throw new Error("Invalid activity report");
   }
   return { presence: report.presence };

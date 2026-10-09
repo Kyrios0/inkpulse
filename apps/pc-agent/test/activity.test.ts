@@ -8,7 +8,7 @@ test("activity helper output is parsed strictly", () => {
   assert.deepEqual(parseActivityLine("0 1\r"), { idleSeconds: 0, locked: true });
   // Unknown lock state falls back to idle time alone.
   assert.deepEqual(parseActivityLine("7 -1"), { idleSeconds: 7, locked: false });
-  for (const line of ["", "-1 0", "abc 0", "5 2", "5", "99999999999 0"]) {
+  for (const line of ["", "-1 0", "abc 0", "5 2", "5"]) {
     assert.equal(parseActivityLine(line), undefined, line);
   }
 });

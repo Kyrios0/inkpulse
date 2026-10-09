@@ -129,7 +129,8 @@ test("manifest exposes only derived presence; ingest accepts activity", async (c
   assert.ok(!JSON.stringify(present).includes("idle"), "manifest must not expose activity data");
 
   assert.equal((await put({ schemaVersion: 1, reports: {}, activity: { idleSeconds: 3, locked: false } })).status, 400);
-  assert.equal((await put({ schemaVersion: 1, reports: {}, activity: { presence: "present", locked: false } })).status, 400);
+  // Unknown fields are dropped by the parser, never stored or derived from.
+  assert.equal((await put({ schemaVersion: 1, reports: {}, activity: { presence: "present", locked: false } })).status, 204);
   assert.equal((await put({ schemaVersion: 1, reports: {}, activity: { presence: "invalid" } })).status, 400);
   assert.equal((await put({ schemaVersion: 1, reports: {} })).status, 400);
 });

@@ -33,11 +33,7 @@ export async function renderPageSet(data: DashboardData): Promise<RenderedPageSe
     const png = await sharp(Buffer.from(svg)).png({ palette: true, colours: 4, dither: 0 }).toBuffer();
     return { id, title, png, version: `sha256:${createHash("sha256").update(png).digest("hex")}` as const, updatedAt: data.generatedAt };
   }));
-  const pages = new Map(rendered.map(page => [page.id, page]));
-  for (const id of DISPLAY_PAGE_IDS) {
-    if (!pages.has(id)) throw new Error(`Renderer did not produce required page: ${id}`);
-  }
-  return { generatedAt: data.generatedAt, pages };
+  return { generatedAt: data.generatedAt, pages: new Map(rendered.map(page => [page.id, page])) };
 }
 
 export function renderOverview(data: DashboardData): string {

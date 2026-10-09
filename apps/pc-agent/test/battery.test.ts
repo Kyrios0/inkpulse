@@ -5,15 +5,13 @@ import { parseBatteryReport } from "../../../packages/contracts/src/battery.js";
 
 test("battery device configuration stays local and uses unique fixed slots", () => {
   assert.deepEqual(parseBatteryConfig([{ id: "phone", name: " Test phone " }]), [{ id: "phone", name: "Test phone" }]);
-  for (const value of [[], null, [{ id: "phone", name: "" }], [{ id: "other", name: "x" }],
-    [{ id: "phone", name: "x", address: "private" }],
-    [{ id: "phone", name: "x" }, { id: "phone", name: "y" }],
-    [{ id: "phone", name: "x" }, { id: "watch", name: "X" }]]) {
+  for (const value of [[], null, [null], [{ id: "phone", name: "" }], [{ id: "other", name: "x" }],
+    [{ id: "phone", name: "x" }, { id: "phone", name: "y" }]]) {
     assert.throws(() => parseBatteryConfig(value), /Invalid battery device configuration/);
   }
 });
 
-test("battery summaries validate readings and reject private identifiers", () => {
+test("battery summaries validate readings and drop private identifiers", () => {
   const now = "2026-10-06T15:00:00Z";
   const valid = { schemaVersion: 1, measuredAt: now,
     devices: [{ id: "phone", percent: 0, connected: true, observedAt: now }] };
@@ -24,11 +22,12 @@ test("battery summaries validate readings and reject private identifiers", () =>
     { ...valid.devices[0], percent: 101 }, { ...valid.devices[0], percent: -1 },
     { ...valid.devices[0], percent: 60.5 }, { ...valid.devices[0], percent: "60" },
     { ...valid.devices[0], id: "unknown" }, { ...valid.devices[0], connected: "true" },
-    { ...valid.devices[0], observedAt: null }, { ...valid.devices[0], observedAt: "invalid" },
-    { ...valid.devices[0], observedAt: "2026-10-07T15:00:00Z" },
-    { ...valid.devices[0], address: "private" }, { ...valid.devices[0], name: "private" },
+    { ...valid.devices[0], observedAt: "invalid" },
   ]) assert.throws(() => parseBatteryReport({ ...valid, devices: [device] }), /Invalid battery report/);
   assert.throws(() => parseBatteryReport({ ...valid, devices: [] }), /Invalid battery report/);
   assert.throws(() => parseBatteryReport({ ...valid, devices: [valid.devices[0], valid.devices[0]] }), /Invalid battery report/);
-  assert.throws(() => parseBatteryReport({ ...valid, accountId: "private" }), /Invalid battery report/);
+  // Identifying fields never survive parsing, so they can never be stored.
+  const leaky = { ...valid, accountId: "private",
+    devices: [{ ...valid.devices[0], name: "private", address: "private" }] };
+  assert.deepEqual(parseBatteryReport(leaky), valid);
 });

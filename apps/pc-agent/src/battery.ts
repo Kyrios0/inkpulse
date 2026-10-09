@@ -6,19 +6,16 @@ import { BATTERY_DEVICE_IDS, parseBatteryReport, type BatteryDeviceId, type Batt
 export interface BatteryDeviceConfig { id: BatteryDeviceId; name: string }
 
 export function parseBatteryConfig(value: unknown): BatteryDeviceConfig[] {
-  if (!Array.isArray(value) || !value.length || value.length > 3) throw new Error("Invalid battery device configuration");
+  if (!Array.isArray(value) || !value.length) throw new Error("Invalid battery device configuration");
   const devices = value.map((device): BatteryDeviceConfig => {
-    if (!device || typeof device !== "object" || Array.isArray(device)) throw new Error("Invalid battery device configuration");
-    const entry = device as Record<string, unknown>;
+    const entry = (device ?? {}) as Record<string, unknown>;
     if (!BATTERY_DEVICE_IDS.includes(entry.id as BatteryDeviceId) || typeof entry.name !== "string" ||
-        !entry.name.trim() || entry.name.length > 120 || /[\r\n\0]/.test(entry.name) ||
-        Object.keys(entry).some(key => key !== "id" && key !== "name")) {
+        !entry.name.trim()) {
       throw new Error("Invalid battery device configuration");
     }
     return { id: entry.id as BatteryDeviceId, name: entry.name.trim() };
   });
-  if (new Set(devices.map(device => device.id)).size !== devices.length ||
-      new Set(devices.map(device => device.name.toLowerCase())).size !== devices.length) {
+  if (new Set(devices.map(device => device.id)).size !== devices.length) {
     throw new Error("Invalid battery device configuration");
   }
   return devices;

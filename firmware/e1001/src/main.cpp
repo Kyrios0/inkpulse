@@ -111,7 +111,6 @@ Preferences preferences;
 
 uint8_t *packedFrame = nullptr;
 uint16_t pngLine[kDisplayWidth];
-bool pngDecodeValid = true;
 String selectedPageId;
 String displayedPageId;
 String displayedVersion;
@@ -173,11 +172,6 @@ String baseUrl() {
 bool isValidImageUrl(const String &pageId, const String &url) {
   const String expected = "/api/v1/display/pages/" + pageId + ".png";
   return url == expected || url.startsWith(expected + "?");
-}
-
-bool isValidCachePath(const String &path) {
-  return path.startsWith(String(kCacheDirectory) + "/") &&
-         path.endsWith(".png") && path.indexOf("..") < 0;
 }
 
 bool firmwareConfigured() {
@@ -260,33 +254,8 @@ void showFirstBootDiagnostic() {
   rememberShown("", "");
 }
 
-bool validatePngSignature(const String &path) {
-  File file = LittleFS.open(path, "r");
-  if (!file || file.size() < 24 || file.size() > kPngBytesMax) {
-    if (file) file.close();
-    return false;
-  }
-
-  uint8_t header[24]{};
-  const size_t bytesRead = file.read(header, sizeof(header));
-  file.close();
-  static constexpr uint8_t signature[] = {0x89, 0x50, 0x4e, 0x47,
-                                          0x0d, 0x0a, 0x1a, 0x0a};
-  if (bytesRead != sizeof(header) || memcmp(header, signature, sizeof(signature)) != 0) {
-    return false;
-  }
-
-  const uint32_t width = (static_cast<uint32_t>(header[16]) << 24) |
-                         (static_cast<uint32_t>(header[17]) << 16) |
-                         (static_cast<uint32_t>(header[18]) << 8) | header[19];
-  const uint32_t height = (static_cast<uint32_t>(header[20]) << 24) |
-                          (static_cast<uint32_t>(header[21]) << 16) |
-                          (static_cast<uint32_t>(header[22]) << 8) | header[23];
-  return width == kDisplayWidth && height == kDisplayHeight;
-}
-
 bool fileMatchesVersion(const String &path, const String &version) {
-  if (!isValidVersion(version) || !validatePngSignature(path)) return false;
+  if (!isValidVersion(version)) return false;
   File file = LittleFS.open(path, "r");
   if (!file) return false;
 
@@ -316,11 +285,6 @@ bool fileMatchesVersion(const String &path, const String &version) {
 }
 
 int pngDrawLine(PNGDRAW *draw) {
-  if (draw->y < 0 || draw->y >= kDisplayHeight || draw->iWidth != kDisplayWidth) {
-    pngDecodeValid = false;
-    return 0;
-  }
-
   png.getLineAsRGB565(draw, pngLine, PNG_RGB565_LITTLE_ENDIAN, 0xffffffff);
   const size_t rowOffset = static_cast<size_t>(draw->y) * (kDisplayWidth / 2);
 
@@ -342,11 +306,6 @@ int pngDrawLine(PNGDRAW *draw) {
 }
 
 bool renderPage(const PageRecord &page, RedrawReason reason) {
-  if (!fileMatchesVersion(page.cachePath, page.version)) {
-    LOG.printf("[display] invalid cached PNG for %s\n", page.id.c_str());
-    return false;
-  }
-
   File file = LittleFS.open(page.cachePath, "r");
   const size_t pngBytes = file.size();
   uint8_t *encoded = static_cast<uint8_t *>(allocatePreferPsram(pngBytes));
@@ -373,12 +332,11 @@ bool renderPage(const PageRecord &page, RedrawReason reason) {
   }
 
   memset(packedFrame, 0x33, kPackedFrameBytes);
-  pngDecodeValid = true;
   const int opened = png.openRAM(encoded, static_cast<int>(pngBytes), pngDrawLine);
   bool decoded = false;
   if (opened == PNG_SUCCESS && png.getWidth() == kDisplayWidth &&
       png.getHeight() == kDisplayHeight) {
-    decoded = png.decode(nullptr, 0) == PNG_SUCCESS && pngDecodeValid;
+    decoded = png.decode(nullptr, 0) == PNG_SUCCESS;
   }
   if (opened == PNG_SUCCESS) png.close();
   free(encoded);
@@ -434,8 +392,7 @@ bool parseStateFile(const char *path, PageSet &state) {
     // Retain useful offline pages when upgrading a three-page cache.
     if (page.id == "codex") continue;
     if (parsed.pageCount >= kPageCountMax) return false;
-    if (!isAllowedPageId(page.id) || !isValidVersion(page.version) ||
-        !isValidCachePath(page.cachePath) || !fileMatchesVersion(page.cachePath, page.version) ||
+    if (!isAllowedPageId(page.id) || !fileMatchesVersion(page.cachePath, page.version) ||
         findPage(parsed, page.id) >= 0) {
       return false;
     }
@@ -479,11 +436,6 @@ bool saveState(const PageSet &state) {
   }
   file.flush();
   file.close();
-  PageSet verified;
-  if (!parseStateFile(kStateNextPath, verified)) {
-    LittleFS.remove(kStateNextPath);
-    return false;
-  }
 
   LittleFS.remove(kStatePreviousPath);
   const bool hadCurrent = LittleFS.exists(kStatePath);
@@ -580,7 +532,6 @@ bool fetchManifest(PageSet &manifest) {
 
   const String body = http.getString();
   http.end();
-  if (body.length() != static_cast<size_t>(contentLength)) return false;
 
   JsonDocument document;
   const DeserializationError error = deserializeJson(document, body);
@@ -605,13 +556,8 @@ bool fetchManifest(PageSet &manifest) {
     page.title = source["title"] | "";
     page.version = source["version"] | "";
     page.imageUrl = source["imageUrl"] | "";
-    const int width = source["width"] | 0;
-    const int height = source["height"] | 0;
-    const String format = source["format"] | "";
     if (!isAllowedPageId(page.id) || findPage(parsed, page.id) >= 0 ||
-        page.title.length() == 0 || page.title.length() > 48 ||
-        !isValidVersion(page.version) || !isValidImageUrl(page.id, page.imageUrl) ||
-        width != kDisplayWidth || height != kDisplayHeight || format != "png") {
+        !isValidVersion(page.version) || !isValidImageUrl(page.id, page.imageUrl)) {
       LOG.println("[sync] rejected page descriptor");
       return false;
     }
@@ -645,7 +591,7 @@ bool downloadPage(const PageRecord &page, const String &path) {
 
   const int status = http.GET();
   const int contentLength = http.getSize();
-  if (status != HTTP_CODE_OK || contentLength < 24 ||
+  if (status != HTTP_CODE_OK || contentLength <= 0 ||
       contentLength > static_cast<int>(kPngBytesMax)) {
     LOG.printf("[sync] %s HTTP %d, length %d\n", page.id.c_str(), status,
                contentLength);
@@ -663,7 +609,7 @@ bool downloadPage(const PageRecord &page, const String &path) {
   target.flush();
   target.close();
   http.end();
-  if (written != contentLength || !fileMatchesVersion(path, page.version)) {
+  if (!fileMatchesVersion(path, page.version)) {
     LittleFS.remove(path);
     LOG.printf("[sync] invalid download for %s\n", page.id.c_str());
     return false;
@@ -710,8 +656,7 @@ bool refreshPageSet() {
   for (size_t index = 0; index < remote.pageCount; ++index) {
     PageRecord &target = next.pages[index];
     const int cachedIndex = findPage(cachedPages, target.id);
-    if (cachedIndex >= 0 && cachedPages.pages[cachedIndex].version == target.version &&
-        fileMatchesVersion(cachedPages.pages[cachedIndex].cachePath, target.version)) {
+    if (cachedIndex >= 0 && cachedPages.pages[cachedIndex].version == target.version) {
       target.cachePath = cachedPages.pages[cachedIndex].cachePath;
       continue;
     }
