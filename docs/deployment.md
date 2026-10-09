@@ -29,8 +29,10 @@ Use shell assignment syntax and restrict the file to its owning user:
 ```sh
 INKPULSE_DEVICE_TOKEN=replace-with-a-random-token
 INKPULSE_AI_INGEST_TOKEN=replace-with-a-different-random-token
+INKPULSE_STOCK_SYMBOLS=AAPL,MSFT
 ```
 
+Choose your own 1-12 stock symbols; the server has no default watchlist.
 The file is sourced immediately before PM2 starts the service. Do
 not put runtime credentials in the deployment JSON or PM2 configuration.
 The existing Nginx `/api/v1/metrics/codex` location also carries the combined
@@ -91,7 +93,9 @@ policies are chosen.
 The GitHub Actions production monitor runs the same `npm run
 monitor:production` probe available to local operators. It uses only the public
 base URL and the read-only device token. GitHub scheduling is a useful external
-availability signal, but it is not a real-time guarantee and can be delayed.
+availability signal. Set repository variable `INKPULSE_PUBLIC_BASE_URL` to opt in
+and secret `INKPULSE_MONITOR_DEVICE_TOKEN` for authentication. Without the URL,
+the job is skipped. Scheduled runs are not a real-time guarantee and can be delayed.
 
 PM2 restarts the Node.js process after application crashes. The deployment host
 must also have the PM2-generated systemd startup unit enabled so the saved

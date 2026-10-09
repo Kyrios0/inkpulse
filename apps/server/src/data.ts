@@ -54,20 +54,20 @@ export function createMockDashboardData(
       stale: false,
     },
     stocks: [
-      // Illustrative prices, not live quotes. Match the configured watchlist.
-      quote("JNJ", "Johnson & Johnson", 168.42, 1.18, 0.71, [
+      // Fictional fixtures, independent of any configured production watchlist.
+      quote("DEMOA", "Example Alpha", 168.42, 1.18, 0.71, [
         166, 167, 166.5, 167.8, 167.4, 168, 168.42,
       ], generatedAt),
-      quote("JPM", "JPMorgan Chase", 302.17, -1.84, -0.61, [
+      quote("DEMOB", "Example Beta", 302.17, -1.84, -0.61, [
         305, 303, 304, 302, 303, 301, 302.17,
       ], generatedAt),
-      quote("META", "Meta Platforms", 761.36, 14.62, 1.96, [
+      quote("DEMOC", "Example Gamma", 761.36, 14.62, 1.96, [
         747, 752, 749, 755, 753, 758, 761.36,
       ], generatedAt),
-      quote("PG", "Procter & Gamble", 157.91, -0.63, -0.40, [
+      quote("DEMOD", "Example Delta", 157.91, -0.63, -0.40, [
         159, 158.5, 159, 158, 158.5, 157.7, 157.91,
       ], generatedAt),
-      quote("XLP", "Consumer Staples ETF", 82.54, 0.37, 0.45, [
+      quote("DEMOE", "Example Epsilon", 82.54, 0.37, 0.45, [
         82.1, 82.3, 82.2, 82.4, 82.3, 82.5, 82.54,
       ], generatedAt),
     ],

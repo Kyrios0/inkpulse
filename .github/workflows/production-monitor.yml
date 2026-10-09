@@ -20,6 +20,8 @@ concurrency:
 
 jobs:
   probe:
+    # Setting the deployment URL explicitly opts this repository into monitoring.
+    if: ${{ vars.INKPULSE_PUBLIC_BASE_URL != '' }}
     name: Probe production
     runs-on: ubuntu-latest
     timeout-minutes: 3

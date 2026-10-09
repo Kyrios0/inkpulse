@@ -73,7 +73,8 @@ pull request. A separate five-minute production monitor verifies HTTPS, the
 public health endpoint, authentication boundaries, manifest freshness, all
 three PNG pages, ETags, and cache revalidation.
 
-The monitor requires repository variable `INKPULSE_PUBLIC_BASE_URL` and the
+The monitor is skipped until repository variable `INKPULSE_PUBLIC_BASE_URL` is set.
+To enable it, configure that URL and the
 read-only Actions secret `INKPULSE_MONITOR_DEVICE_TOKEN`. It never receives the
 AI ingest token or any account credentials. Run the same probe locally with:
 
@@ -88,13 +89,18 @@ INKPULSE_MONITOR_DEVICE_TOKEN=... npm run monitor:production
 npm install
 npm test
 npm run render:mock
-npm start
 ```
 
 `npm test` builds the TypeScript project and verifies image dimensions,
 four-level grayscale output, display authorization, manifest ordering, and HTTP
 cache revalidation. `npm run render:mock` writes preview images to
 `output/mock/`; generated output is gitignored.
+
+To run the live server, copy `.env.example` to `.env.local`, set
+`INKPULSE_STOCK_SYMBOLS` to your own 1-12 symbols, and configure its tokens. Then
+run `node --env-file=.env.local dist/apps/server/src/index.js`. There is no
+production watchlist fallback; `npm start` expects configuration already in the
+process environment. Mock rendering needs no local configuration.
 
 The E1001 firmware can also be compiled before the hardware arrives:
 
@@ -109,8 +115,8 @@ The display uses a shared monochrome grid with large readings, thin dividers,
 and page indicators. Filled capacity segments mean **remaining** allowance.
 Displayed times follow the PC's timezone once the collector publishes a reading;
 the timezone is retained while the PC is offline. Before the first reading, times
-use UTC. Mock previews use illustrative JNJ, JPM, META, PG,
-and XLP quotes; they are labeled as sample data. Watchlists above six symbols
+use UTC. Mock previews use fictional DEMOA–DEMOE quotes independent of deployment
+configuration; they are labeled as sample data. Watchlists above six symbols
 use compact stock rows. The overview shows three battery slots above a pair of
 AI capacity panels; the dedicated Stocks page keeps the full watchlist.
 
@@ -124,8 +130,8 @@ disable battery collection. This source is not available from WSL/Linux.
 
 After building, `npm run collect:battery:check` reads batteries without uploading
 or querying AI usage. The existing `collect:ai` process includes readings in its
-one-minute upload. Pixel 9 Pro, Pixel Watch 3, and Bose QC Ultra 2 HP have been
-verified through Windows's System-class Hands-Free HF/AG battery properties.
+one-minute upload. Supported devices expose battery levels through Windows's
+System-class Hands-Free HF/AG battery properties; availability varies by device.
 The reader checks connection state first; a Bluetooth-class BLE record can hold
 an obsolete value. Phone Link's Calls setup may be needed to establish the phone's
 Bluetooth connection, but its UI and databases are not used by the collector.

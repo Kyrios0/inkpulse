@@ -30,7 +30,7 @@ const displayRefreshSeconds = parseSeconds(
   86_400,
 );
 const symbols = parseSymbols(
-  process.env.INKPULSE_STOCK_SYMBOLS ?? "JNJ,JPM,META,PG,XLP",
+  process.env.INKPULSE_STOCK_SYMBOLS ?? "",
 );
 const dataDirectory = resolve(process.env.INKPULSE_DATA_DIR ?? "data");
 const codexStaleSeconds = parseSeconds(

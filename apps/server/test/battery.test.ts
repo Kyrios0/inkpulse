@@ -40,7 +40,7 @@ test("battery overview has fixed balanced slots and honest missing/offline label
   const data = createMockDashboardData();
   const svg = renderOverview(data);
   for (const value of ["Phone", "Watch", "Headphones", "60%", "70%", "90%", "DEVICE BATTERIES"]) assert.ok(svg.includes(value));
-  assert.ok(!svg.includes("JNJ") && !svg.includes("WATCHLIST"));
+  assert.ok(data.stocks.every(stock => !svg.includes(stock.symbol)) && !svg.includes("WATCHLIST"));
   const missing = { ...data };
   delete missing.battery;
   assert.ok(renderOverview(missing).includes("No reading yet"));

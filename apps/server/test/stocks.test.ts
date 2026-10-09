@@ -3,12 +3,27 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import type { StockQuote } from "../src/data.js";
 import { StockCache } from "../src/stocks/cache.js";
 import type { StockProvider } from "../src/stocks/provider.js";
 import { StockService } from "../src/stocks/service.js";
 import { parseYahooChartResponse } from "../src/stocks/yahoo.js";
+
+test("server requires an explicitly configured watchlist before startup", () => {
+  for (const value of [undefined, "", "  "]) {
+    const env = { ...process.env };
+    delete env.INKPULSE_STOCK_SYMBOLS;
+    if (value !== undefined) env.INKPULSE_STOCK_SYMBOLS = value;
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL("../src/index.js", import.meta.url))], {
+      env, encoding: "utf8", timeout: 10_000,
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /INKPULSE_STOCK_SYMBOLS must contain 1 to 12 symbols/);
+  }
+});
 
 test("Yahoo chart response is normalized into a stock quote", () => {
   const quote = parseYahooChartResponse(

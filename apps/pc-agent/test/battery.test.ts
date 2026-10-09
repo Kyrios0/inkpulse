@@ -4,7 +4,7 @@ import { parseBatteryConfig } from "../src/battery.js";
 import { parseBatteryReport } from "../../../packages/contracts/src/battery.js";
 
 test("battery device configuration stays local and uses unique fixed slots", () => {
-  assert.deepEqual(parseBatteryConfig([{ id: "phone", name: " Pixel test " }]), [{ id: "phone", name: "Pixel test" }]);
+  assert.deepEqual(parseBatteryConfig([{ id: "phone", name: " Test phone " }]), [{ id: "phone", name: "Test phone" }]);
   for (const value of [[], null, [{ id: "phone", name: "" }], [{ id: "other", name: "x" }],
     [{ id: "phone", name: "x", address: "private" }],
     [{ id: "phone", name: "x" }, { id: "phone", name: "y" }],
