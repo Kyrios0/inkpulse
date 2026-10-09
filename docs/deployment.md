@@ -1,59 +1,13 @@
 # Deployment
 
-## Prerequisites
-
-- Node.js 22+ (CI uses 24), `bash`, `ssh`, and `rsync`.
-- Windows uses the configured WSL distro's SSH keys/configuration; Linux uses native tools.
-- An unprivileged, key-only SSH account and writable service directory.
-- Separately provision TLS/Nginx, firewall/rate limits, and the user's PM2 systemd
-  startup unit. Deployment does not create these or configure reboot persistence.
-
-## Configuration
-
-Copy [deploy.example.json](../config/deploy.example.json) to ignored
-`config/deploy.local.json`. Set `sshHost`, `sshUser`, `servicePath`,
-`listenPort`, and Windows `wslDistribution`. SSH must work non-interactively.
-The service path must be under `/home/<sshUser>/services/`.
-
-Deployment binds to loopback; example fields `listenHost` and `publicBaseUrl`
-are unused. Configure the public origin separately for collector, firmware, and monitor.
-
-Create `SERVICE_PATH/shared/runtime.env`, owned by the app user with mode 600:
-
 ```sh
-INKPULSE_DEVICE_TOKEN=replace-with-a-random-token
-INKPULSE_AI_INGEST_TOKEN=replace-with-a-different-random-token
-INKPULSE_STOCK_SYMBOLS=AAPL,MSFT
+npm run deploy:dry-run      # build, test, validate config; no SSH
+npm run deploy:bootstrap    # first deploy: also installs Node.js and PM2 for the app user
+npm run deploy              # later releases
+npm run monitor:production  # probe the live API (needs the monitor variables below)
 ```
 
-Choose your own 1–12 symbols and nonempty, distinct tokens. The server refuses to
-start in production without a display token (outside production a missing
-display token allows unauthenticated reads); missing ingest tokens disable
-writes and presence tracking. Keep account
-credentials on the PC. Never put secrets in deployment JSON or PM2 definitions.
-
-Runtime settings are sourced before PM2 starts. Caches persist under
-`shared/data`; device names stay in ignored PC configuration. Existing
-`/api/v1/metrics/codex` ingress accepts combined AI, battery, and presence reports.
-
-## Deploy and verify
-
-```sh
-npm run deploy:dry-run    # Build/tests/config validation; no SSH connection
-npm run deploy:bootstrap  # First deployment: install isolated Node.js/PM2 too
-npm run deploy            # Subsequent releases
-```
-
-Bootstrap verifies the official Node.js download checksum and installs without
-sudo. Deployment tests locally, copies a new release, installs Linux production
-dependencies, switches `current`, and replaces the PM2 process. A failed loopback
-health check restores the previous release. Old releases remain for recovery;
-cleanup is separate. CI validates changes but does not deploy.
-
-## Update the PC or device
-
-Server deployment neither restarts the collector nor flashes firmware.
-After collector changes, rebuild and restart its process. On Windows:
+Restart the Windows collector after collector changes (skip `Stop-ScheduledTask` on first install):
 
 ```powershell
 npm run build
@@ -61,24 +15,50 @@ Stop-ScheduledTask -TaskName "InkPulse Codex Collector"
 & ./scripts/install-windows-collector-task.ps1
 ```
 
-For first installation, omit `Stop-ScheduledTask`; create PC `.env.local`
-and optional battery configuration first ([collector setup](data-sources.md)).
-The legacy-named task runs the combined collector at sign-in without admin rights.
+Firmware: `npm run firmware:upload` ([guide](../firmware/e1001/README.md)). Layout changes are server-only; no flash needed.
 
-Firmware changes: `npm run firmware:upload` ([guide](../firmware/e1001/README.md)).
-Server-rendered layout changes need no flash.
+## Prerequisites
+
+- Node.js 22+, `bash`, `ssh`, `rsync`. On Windows these run inside the configured WSL distro with its SSH keys.
+- An unprivileged, key-only SSH account. TLS/Nginx, firewall, rate limits, and the PM2 systemd startup unit
+  are provisioned separately; deploy does not create them.
+
+## Configure
+
+Copy [deploy.example.json](../config/deploy.example.json) to ignored `config/deploy.local.json` and set
+`sshHost`, `sshUser`, `servicePath` (under `/home/<sshUser>/services/`), `listenPort`, and on Windows
+`wslDistribution`. `listenHost` and `publicBaseUrl` are unused; the service always binds to loopback.
+
+Create `SERVICE_PATH/shared/runtime.env`, mode 600, owned by the app user:
+
+```sh
+INKPULSE_DEVICE_TOKEN=replace-with-a-random-token
+INKPULSE_AI_INGEST_TOKEN=replace-with-a-different-random-token
+INKPULSE_STOCK_SYMBOLS=AAPL,MSFT
+```
+
+The server refuses to start in production without a device token. Without an ingest token, uploads and
+presence tracking are off. Keep account credentials on the PC, never in deploy JSON or PM2 files.
+
+## What deploy does
+
+Tests locally, copies a new release, runs `npm ci --omit=dev` on the host, switches `current`, and restarts
+PM2. A failed loopback health check restores the previous release. Caches persist in `shared/data`; old
+releases are kept for recovery. Bootstrap verifies the Node.js checksum and needs no sudo. CI never deploys.
+
+## Collector
+
+First install: create the PC's `.env.local` and optional battery config ([data sources](data-sources.md)),
+then run the install script above. The task, still named "Codex Collector", runs the combined collector at
+sign-in without admin rights.
 
 ## Monitoring
 
-Set repository variable `INKPULSE_PUBLIC_BASE_URL` and read-only secret
-`INKPULSE_MONITOR_DEVICE_TOKEN` to enable the five-minute GitHub monitor.
-Without the URL the job skips. Scheduled runs may be delayed.
+Set repository variable `INKPULSE_PUBLIC_BASE_URL` and secret `INKPULSE_MONITOR_DEVICE_TOKEN` (read-only)
+to enable the five-minute GitHub monitor; without the URL it skips. It checks health, auth, manifest
+freshness, both PNGs, ETags, and revalidation, and never needs the write token.
 
-Locally, provide those environment variables and run `npm run monitor:production`.
-It checks HTTPS health, authentication, manifest freshness, two PNGs, ETags,
-and cache revalidation. It never needs the write token or account credentials.
+## Two-page upgrade
 
-For the two-page upgrade, deploy the server before flashing new firmware and
-update the monitor alongside it. Previous firmware accepts two-page manifests;
-new firmware migrates legacy caches, dropping the retired AI page. AI ingest
-and the Overview's AI section are unchanged.
+Deploy the server before flashing new firmware. Old firmware accepts the two-page manifest; new firmware
+migrates its cache and drops the retired AI page. AI ingest and the Overview's AI section are unchanged.
