@@ -39,11 +39,12 @@ npm run firmware:upload
 npm run firmware:monitor
 ```
 
-If the sleeping device is not detected, press its green Refresh button once and
+If the device is not detected, press its green Refresh button once and
 retry the upload. A normal first boot performs a white panel clear, shows four
 gray diagnostic bands, connects to Wi-Fi, downloads all pages, and replaces the
 diagnostic with Overview. That initial sequence includes multiple slow full
-refreshes by design; later boots draw the cached page without a white clear.
+refreshes by design; later boots skip the clear and only redraw the cached page
+if its version is not already recorded as displayed in NVS.
 
 The physical buttons are mapped from Seeed's board definition:
 
@@ -53,7 +54,7 @@ The physical buttons are mapped from Seeed's board definition:
 
 ## Runtime behavior
 
-- The manifest controls the polling interval; production currently requests a
+- The manifest controls the polling interval; the server defaults to a
   check every 60 seconds. Polling does not touch the panel.
 - Images are downloaded only when their SHA-256 version changes, and the panel
   is refreshed only when the selected page's version changes.
@@ -70,7 +71,7 @@ The physical buttons are mapped from Seeed's board definition:
   Wi-Fi, and failures leave the last displayed frame and cache intact.
 - HTTPS is verified against the bundled ISRG Root X1/X2 trust anchors. Redirects
   and image URLs outside the expected display route are rejected.
-- This plugged-in first release stays awake with Wi-Fi enabled. Deep sleep and
+- This plugged-in firmware stays awake with Wi-Fi enabled. Deep sleep and
   battery-aware scheduling remain a later hardware-measurement task.
 
 ## Panel refresh accounting
@@ -95,7 +96,7 @@ to measure the real refresh rate.
 This firmware uses full four-gray refreshes only. The UC8179 supports windowed
 partial refresh, but Seeed_GFX implements it for 1-bit mode only
 (`EPaper::updataPartial` reads a 1-bpp buffer), and every changed region on
-InkPulse pages contains anti-aliased gray pixels that a 1-bit update would
+InkPulse pages contain anti-aliased gray pixels that a 1-bit update would
 destroy. `rdPart` is reserved so a future partial-refresh path can be measured
 without changing the counter layout.
 

@@ -20,15 +20,15 @@ Rendering lives on the VPS rather than the PC, so stock pages continue to
 update while the PC is offline. AI and battery data retain their last known
 values with visible stale labels.
 
-## Version 1 pages
+## Pages
 
 1. **Overview** — phone, watch, and headphone batteries above AI capacity.
 2. **Stocks** — the complete watchlist with price and daily movement.
 3. **AI usage** — Codex and Claude capacity, reset times when available, and
-   independent measurement ages. The wire ID stays `codex` for compatibility.
+   independent freshness labels. The wire ID stays `codex` for compatibility.
 
 The E1001's left and right buttons switch between cached pages. The refresh
-button wakes the device and checks the server for updated versions. Page
+button checks the server for updated versions. The current firmware stays awake. Page
 switching does not require another network request when the cached image is
 current.
 
@@ -68,8 +68,8 @@ Deployment and rollback are documented in [docs/deployment.md](docs/deployment.m
 
 ## Continuous verification
 
-GitHub Actions runs the build and tests on Linux and Windows for every push and
-pull request. A separate five-minute production monitor verifies HTTPS, the
+GitHub Actions runs the build and tests on Linux and Windows for pushes to `main`
+and pull requests, plus a firmware build. An opt-in five-minute production monitor verifies HTTPS, the
 public health endpoint, authentication boundaries, manifest freshness, all
 three PNG pages, ETags, and cache revalidation.
 
@@ -102,14 +102,14 @@ run `node --env-file=.env.local dist/apps/server/src/index.js`. There is no
 production watchlist fallback; `npm start` expects configuration already in the
 process environment. Mock rendering needs no local configuration.
 
-The E1001 firmware can also be compiled before the hardware arrives:
+Build the E1001 firmware without flashing hardware:
 
 ```sh
 npm run firmware:build
 ```
 
 See [`firmware/e1001/README.md`](firmware/e1001/README.md) for the ignored Wi-Fi
-and display-token configuration and the single-upload arrival test.
+and display-token configuration, flashing, and runtime behavior.
 
 The display uses a shared monochrome grid with large readings, thin dividers,
 and page indicators. Filled capacity segments mean **remaining** allowance.
@@ -141,7 +141,8 @@ one-minute physical measurements. Only slots, percentages, connection state, and
 observation timestamps leave the PC. Charging state is not inferred. Missing or
 expired readings display a dash; disconnections preserve the last reading. Battery changes
 respect the existing AFK hold and do not trigger the AI release exception.
-Unchanged readings produce identical pixels, and no firmware change is needed.
+Polling alone does not change pixels; freshness transitions and date changes can.
+Battery layout updates require no firmware change.
 
 Battery numbers round to the nearest 10% with a thin ten-step accent; positive
 values below 10% show `<10%`. Raw values remain cached: current readings at 20%
@@ -153,11 +154,13 @@ avoid clock-driven redraws; AI bars are unchanged.
 
 ## Stock data
 
-The initial keyless adapter requests five-minute US quote charts from Yahoo and
-stores the last successful normalized snapshot on disk. Symbols and refresh
-frequency are environment settings. Provider failures preserve cached quotes
-and visibly mark the Stocks page stale; the display is informational and not a
-trading data source.
+The keyless adapter requests US quote charts from Yahoo's unofficial endpoint
+with five-minute trend bars, polling every 900 seconds by default. Set your own
+`INKPULSE_STOCK_SYMBOLS` (1-12 symbols); there is no default watchlist.
+Successful snapshots are cached on disk. Failures retain prior quotes; `STALE`
+appears after prolonged failures, not one transient error. Closed-market quote
+timestamps can remain unchanged even while fetching works. This is informational,
+not a trading data source; an authenticated provider remains future work.
 
 ## Claude Desktop usage
 
@@ -210,15 +213,20 @@ current-user task launched at sign-in; it does not require administrator access.
 On native Windows the collector discovers the newest installed Codex executable,
 so a normal Codex application update does not require editing the task.
 
-The same collector works on Windows, WSL, and Linux. It publishes once per
-minute while running. The server marks the value offline after three missed
-updates while retaining the last reading.
+The Codex collector supports Windows, WSL, and Linux; Bluetooth batteries and
+input/lock detection require native Windows. The watch loop waits 60 seconds
+after each collection attempt by default. Codex readings older than 180 seconds
+are labeled `Last reading`; `Live` means recently collected, not user activity.
 
-## Delivery stages
+## Refresh policy and future work
 
-1. Build a mock-data server and render all three pages at 800 x 480.
-2. Add the PC Codex collector and freshness handling. **Complete.**
-3. Add a replaceable US-stock provider adapter and server-side cache. **Complete.**
-4. Deploy under an unprivileged account with TLS ingress. **Complete.**
-5. Prepare E1001 firmware. **Complete; physical panel validation pending delivery.**
-6. Add cross-platform CI and external production monitoring. **Complete.**
+- Device manifest checks: 60 seconds by default; polling does not redraw the panel.
+- Stock fetches: 900 seconds; Claude freshness depends on Desktop's local cache.
+- While AFK, changed pages normally wait up to one hour; AI changes briefly
+  release the hold, battery changes do not. Buttons override it for five minutes.
+- The firmware uses full four-gray refreshes and stays awake. Deep sleep,
+  measured battery-life profiles, and market-aware scheduling remain future work.
+- Authenticated stock providers and optional server metrics are future extensions.
+
+See [display protocol](docs/display-protocol.md) for exact hold behavior and
+[battery estimates](docs/battery-life.md) for the limits of the power model.

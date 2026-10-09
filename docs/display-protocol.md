@@ -16,13 +16,14 @@ quantization. Firmware only decodes the image into the panel buffer.
 ## Manifest
 
 The device requests `GET /api/v1/display/manifest` with its read-only bearer
-token. A version 1 response has this shape:
+token. A version 1 response has this shape (one page shown; actual responses
+include `overview`, `stocks`, and `codex`):
 
 ```json
 {
   "schemaVersion": 1,
   "generatedAt": "2026-09-21T12:00:00Z",
-  "refreshAfterSeconds": 300,
+  "refreshAfterSeconds": 60,
   "defaultPage": "overview",
   "presence": "present",
   "holdRedraws": false,
@@ -46,16 +47,18 @@ token. A version 1 response has this shape:
 with its cached version and skips unchanged downloads. Page image responses
 also provide an `ETag` and support `If-None-Match`.
 
-Because every changed version costs a physical panel refresh, pages avoid
-pixels that change without new information:
+Only a changed selected page can trigger a panel refresh, subject to the hold
+policy. Pages avoid pixels that change without new information:
 
 - the header shows the date, not a clock;
 - the stock footer shows the newest market quote time, not the fetch time, so
-  a closed market renders identical pages;
+  unchanged closed-market quotes do not cause fetch-time-driven redraws;
 - AI status reads `Live` or `Last reading <time>`, never a relative age;
+  `Live` means the source reading is recent, not that the user is active;
 - AI percentages are whole numbers, so every 1 % change still appears;
 - battery display uses 10% buckets and fixed stale labels, not ticking ages;
-  battery changes do not release the AFK hold;
+  disconnected readings remain gray with their observation timestamp until
+  48 hours old, then display a dash. Battery changes do not release the AFK hold;
 - `STALE` appears only after stock refreshes have failed for two refresh
   intervals, not after one transient symbol failure.
 
@@ -100,19 +103,19 @@ to wake less often without making the server cache equally stale.
 
 - **Left:** display the previous cached page, wrapping at the beginning.
 - **Right:** display the next cached page, wrapping at the end.
-- **Refresh:** wake, fetch the manifest, download changed pages, and redraw the
+- **Refresh:** fetch the manifest, download changed pages, and redraw the
   selected page if necessary.
 
 Any button press also counts as someone present at the device for five
 minutes; during that time the device ignores `holdRedraws`.
 
 Navigation is local. It must continue working when Wi-Fi or the VPS is down.
-The selected page is persisted so a scheduled wake does not unexpectedly
+The selected page is persisted so a restart does not unexpectedly
 return the user to the overview.
 
 ## Refresh behavior
 
-1. Wake and connect to the configured Wi-Fi network.
+1. Ensure connection to the configured Wi-Fi network; current firmware stays awake.
 2. Request the manifest with a short timeout.
 3. Validate the schema, page dimensions, format, and allowed URL origin.
 4. Download changed images to temporary files or buffers.
@@ -127,7 +130,7 @@ return the user to the overview.
 
 On any failure, the device keeps its current image and cached page set.
 
-The prepared E1001 implementation stores versioned PNG files in LittleFS and
+The E1001 implementation stores versioned PNG files in LittleFS and
 commits new metadata only after every changed page has passed its PNG signature
 and 800 x 480 dimension checks. It uses full four-gray panel refreshes; unchanged
 versions do not refresh the physical display. After a reboot it redraws only
@@ -136,6 +139,11 @@ it records in NVS after every refresh.
 The downloaded file's SHA-256 digest must match the manifest version before it
 can enter the cache. This also handles a page that changes between the manifest
 and image requests.
+
+The server retains the latest page set, not an archive of all versions. A stale
+version URL can return newer bytes; firmware rejects the mismatched digest and
+retries with a fresh manifest. Date changes and freshness transitions may also
+change images even when numeric readings stay the same.
 
 ## Authentication
 

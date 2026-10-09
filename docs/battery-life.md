@@ -1,15 +1,17 @@
-# E1001 battery-life measurements
+# E1001 battery-life estimates and measurement plan
 
-The display check interval is a product decision. InkPulse separates sourced
-estimates from measurements and will replace the estimates as hardware data
-becomes available.
+The current InkPulse firmware stays awake with Wi-Fi enabled and checks every
+60 seconds by default. It does not deep sleep. The tables below are historical
+planning estimates for a future wake/work/sleep implementation, **not measured
+battery life or predictions for the current firmware**. AFK holds reduce panel
+refreshes, but do not put the radio or processor to sleep.
 
-## Known reference data
+## Reference data collected during initial planning
 
 | Item | Published value | How we use it |
 | --- | ---: | --- |
 | Battery capacity | 2000 mAh | Nominal capacity, not guaranteed usable capacity |
-| Vendor battery claim | Up to about 3 months | The current Seeed guide calls this the default; a reproduced E1001 manual specifies a 6-hour interval |
+| Vendor battery claim | Up to about 3 months | Initial guide/manual reference; a reproduced E1001 manual specifies a 6-hour interval |
 | Deep-sleep support | Yes; example reports about 14 µA | Confirms the wake/work/sleep design; does not establish whole-device consumption |
 | E1001 panel refresh | 2–5 seconds | Active time that should be captured by our measurements |
 | Field report | About 3 days at a 20-minute interval | One SenseCraft user report; useful as a pessimistic anchor, not a controlled test |
@@ -32,7 +34,7 @@ After allowing for the published 14 µA deep-sleep figure, these imply about
 5.47–9.25 mAh per wake. The table assumes every wake downloads and redraws one
 changed page. An unchanged manifest should consume less.
 
-| Check interval | Wakes/day | Worst data age | Estimated mAh/day | Estimated battery life | Evidence |
+| Check interval | Wakes/day | Added polling delay, up to | Estimated mAh/day | Estimated battery life | Evidence |
 | ---: | ---: | ---: | ---: | ---: | --- |
 | 5 minutes | 288 | 5 minutes | 1,576–2,666 | 0.8–1.3 days | Extrapolated |
 | 15 minutes | 96 | 15 minutes | 526–889 | 2.3–3.8 days | Extrapolated |
@@ -43,9 +45,9 @@ changed page. An unchanged manifest should consume less.
 | 6 hours | 4 | 6 hours | 22–37 | 54–90 days | Vendor upper anchor |
 | 24 hours | 1 | 24 hours | 5.8–9.6 | 209–344 days | Long extrapolation; low confidence |
 
-The five-minute row is the freshness ceiling for current stock bars. The
-result also shows that running it around the clock is unlikely to be a useful
-battery default.
+These extrapolations exclude source delays, AFK holds, outages, and battery
+self-discharge. Five-minute chart bars are not a guarantee about quote metadata
+freshness. The model cannot select a battery default without device measurements.
 
 ## Market-aware candidates
 
@@ -59,12 +61,16 @@ times. Holidays are omitted, so actual wake counts can be slightly lower.
 | 30 minutes while open / 6 hours closed | 12.5 | 17–29 days | Balanced candidate |
 | 60 minutes while open / 6 hours closed | 7.9 | 27–46 days | Battery-first candidate |
 
-The 30-minute/6-hour profile is the best starting candidate. The refresh
-button still provides an immediate update, and the final choice remains gated
-on measurement with InkPulse firmware. Market-aware cadence is planned work;
-the current manifest exposes one fixed interval.
+The 30-minute/6-hour profile is one candidate to measure, not a current default.
+The refresh button fetches the latest server pages, not a fresh upstream quote.
+Market-aware cadence is planned work; the current manifest exposes one fixed
+interval and the stock fetch timer runs regardless of market hours.
 
 ## Measurement method
+
+First implement a sleep-capable firmware before testing these wake-based rows.
+For current firmware, measure continuous idle power separately from image
+downloads and redraw energy; use its NVS refresh counters to count panel updates.
 
 Use the same device, firmware, Wi-Fi location, page set, and battery charge
 procedure for every row. Test two workloads because an unchanged manifest

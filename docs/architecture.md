@@ -35,8 +35,9 @@ The implementation launches the installed Codex CLI's local App Server over
 stdio and calls `account/rateLimits/read`. It uses the existing local sign-in;
 the collector never parses Codex credential storage. This interface is kept
 behind one adapter because the App Server contract follows the installed Codex
-version. A collection run is intentionally one-shot so Windows Task Scheduler,
-cron, or a future desktop startup task can invoke the same command.
+version. `collect:ai` runs a persistent watch loop; the Windows sign-in task
+launches that loop. `collect:codex:once` runs one combined collection attempt.
+Both include Claude and optional batteries despite the legacy command name.
 
 ### InkPulse service on the deployment host
 
@@ -46,7 +47,7 @@ responsibilities:
 1. Fetch and cache US stock quotes through a replaceable provider adapter.
 2. Receive and store the latest normalized AI usage and battery summaries.
 3. Render the overview, stocks, and AI usage pages.
-4. Serve a versioned display manifest and immutable page images.
+4. Serve a versioned display manifest and the latest images with ETags.
 
 The application binds to a loopback address. Nginx provides the externally
 reachable TLS endpoint. PM2 state belongs to the application user and is
@@ -54,14 +55,14 @@ separate from other users' PM2 processes.
 
 ### E1001 firmware
 
-The prepared plugged-in firmware stays awake, checks the manifest on its
-declared schedule, and downloads only changed pages. Panel refreshes, not
-polling, are what wear the display, so it redraws only when the selected page's
+The plugged-in firmware stays awake, checks the manifest on its
+declared schedule, and downloads only changed pages. Polling consumes power but
+does not refresh the panel; it redraws only when the selected page's
 pixels change and the server does not ask it to hold (see
 [display-protocol.md](display-protocol.md#presence-and-redraw-hold)). It stores the selected
 page and versioned images in LittleFS. Left and right change the selected page;
-refresh checks for new content. Deep sleep is deferred until measurements can
-be made on the delivered hardware.
+refresh checks for new content. Deep sleep is not implemented; device-specific
+energy measurements are still needed before designing a battery mode.
 
 The panel keeps its last image without power. Network or service failure must
 therefore leave the last valid page visible rather than clear the screen.
@@ -102,7 +103,10 @@ PC collector activity --> presence tracker ----------------^
 - Store no brokerage, Codex, or PC-login credentials on the VPS.
 - Use independent credentials for PC writes and device reads.
 - Make credentials revocable and keep them outside the repository.
-- Rate-limit public endpoints and validate every payload at the API boundary.
+- Payload validation is implemented in the API; configure public rate limits
+  in the reverse proxy (the application does not supply a rate limiter).
+- Set both tokens before exposing the service: absent display credentials allow
+  unauthenticated reads, while absent ingest credentials disable writes.
 - Run the application without sudo and write only below its service/data paths.
 
 ## Source layout
@@ -127,27 +131,21 @@ fifteen-minute default refresh. Responses are validated and normalized before an
 atomic cache write. Partial refreshes retain the previous value for failed
 symbols, and a total provider outage keeps the last complete snapshot.
 
-As of September 2026, there is no equally suitable credential-free fallback
-for intraday US quotes. Stooq is not reachable from the deployment host,
-Nasdaq's supported market-data APIs require credentials, its public website
-endpoint is undocumented, and Cboe prohibits automated extraction from its
-delayed-quote pages. Open-source finance libraries wrap these upstream sources;
-they do not supply independent market data. The adapter boundary remains so a
-credentialed provider can be added later without changing the renderer.
+No automatic fallback provider is implemented. Upstream access, availability,
+and usage terms must be evaluated for each deployment. The adapter boundary
+allows a credentialed provider later without changing the renderer.
 
 ## Refresh cadence
 
 Fifteen minutes is the default server-side stock cadence. The watchlist is for
-glancing, and every changed quote costs a physical panel refresh while the
-market is open. The provider serves five-minute bars, so polling faster than
-five minutes only repeats the same bar and raises rate-limit risk. With the
-default five-symbol watchlist, a fifteen-minute cadence produces at most 20
-quote requests per hour.
+glancing and limiting upstream requests. The provider returns five-minute trend
+bars; this does not guarantee that quote metadata changes only every five
+minutes. With N configured symbols, steady-state polling makes about 4N
+requests per hour, plus a startup fetch. There is no default watchlist.
 
 This is a configurable product choice rather than a hardware constraint. The
-device manifest cadence is configured separately. Initial estimates favor a
-future market-aware schedule rather than one fixed interval: check more often
-while US markets are open and every six hours while they are closed. The server
-can continue maintaining a five-minute cache, and the refresh button can
-request an immediate check. The estimates, assumptions, candidate profiles,
-and future measurements are maintained in [battery-life.md](battery-life.md).
+device manifest cadence defaults to 60 seconds, independently of stock fetching.
+Only selected-page changes can redraw the panel, subject to presence holds.
+The refresh button checks the current server pages; it does not force a new
+upstream stock fetch. Market-aware scheduling is not implemented. Power-model
+assumptions and proposed experiments are in [battery-life.md](battery-life.md).

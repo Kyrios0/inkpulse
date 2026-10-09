@@ -8,15 +8,21 @@ installed successfully.
 
 Requirements:
 
-- Windows: Node.js plus a WSL distribution containing `bash`, `ssh`, and
+- Node.js 22 or newer (CI uses 24).
+- Windows: a WSL distribution containing `bash`, `ssh`, and
   `rsync`. Set `wslDistribution` in the local deployment config.
 - Linux: Node.js plus native `bash`, `ssh`, and `rsync` commands.
 
 ## Configuration
 
-Copy `config/deploy.example.json` to `config/deploy.local.json` and set the SSH
-host, unprivileged SSH user, service path, loopback port, and eventual public
-URL. The local file is gitignored.
+Copy `config/deploy.example.json` to `config/deploy.local.json` and set `sshHost`,
+`sshUser`, `servicePath`, `listenPort`, and (on Windows) `wslDistribution`.
+The local file is gitignored. SSH must work non-interactively in the transport
+environment: Windows deployments use WSL's SSH configuration and keys, not native
+Windows SSH. `servicePath` must be under `/home/<sshUser>/services/`.
+The deploy script binds to loopback; the example's `listenHost` and `publicBaseUrl`
+fields are not consumed by it. Configure the public origin separately in the
+collector, firmware, and monitor.
 
 Runtime credentials belong in this untracked file on the deployment host:
 
@@ -46,6 +52,11 @@ this feature requires the server and PC collector builds, but no firmware flash.
 
 ## First deployment
 
+Before deploying, create the unprivileged SSH account, service directory, and
+private `shared/runtime.env` (mode 600). Both tokens must be nonempty and distinct.
+The app allows unauthenticated display reads if its display token is absent;
+missing ingest credentials disable uploads. Do not expose that development mode.
+
 The isolated application account needs its own Node.js and PM2 runtime. Install
 the pinned LTS runtime and deploy with one command from PowerShell:
 
@@ -56,6 +67,11 @@ npm run deploy:bootstrap
 The bootstrap downloads Node.js from the official release site, verifies the
 published SHA-256 checksum, installs it below the remote user's home directory,
 and installs PM2 without sudo.
+
+Separately configure TLS/reverse proxying, public rate limits, and the PM2
+systemd startup unit. Bootstrap does not provision accounts, Nginx, certificates,
+firewall rules, or reboot persistence. Keep provider/account credentials on the
+PC; only the InkPulse display and ingest tokens belong on the host.
 
 ## Later deployments
 
@@ -82,6 +98,20 @@ The deployment performs the following operations:
 
 Old releases are retained for recovery. Cleanup is intentionally a separate,
 explicit maintenance operation.
+
+Server deployment does not restart the PC collector or flash the E1001. After
+collector changes, rebuild locally and restart its running process. On Windows:
+
+```powershell
+Stop-ScheduledTask -TaskName "InkPulse Codex Collector"
+& ./scripts/install-windows-collector-task.ps1
+```
+
+For first installation, run only the script after creating the PC's `.env.local`
+with the ingest URL/token and optional `config/battery.local.json`. The legacy
+task name is retained; it runs the combined AI/battery collector at sign-in.
+Use native Windows for Bluetooth and input/lock detection. Firmware changes use
+`npm run firmware:upload`; server-rendered layout changes need no flash.
 
 The same `npm run deploy` entry point can be called by Linux CI later. CI
 currently validates changes but does not deploy them. Production deployments
