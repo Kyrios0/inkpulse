@@ -4,6 +4,8 @@ An e-ink dashboard for device batteries, AI usage, and US stocks on a Seeed reTe
 
 ![Overview preview](docs/previews/overview.png)
 
+📖 [The story behind InkPulse](https://blog.kyrios.cn/2026-10-inkpulse/)
+
 ```sh
 npm install
 npm test                 # build and test; no credentials or hardware needed
