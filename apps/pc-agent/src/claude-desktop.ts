@@ -3,9 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { UsageReport, UsageWindow } from "../../../packages/contracts/src/usage.js";
 
-// Observed Claude Desktop history v2. This is an internal cache, not a public
-// API. Extract only the newest sample from a single organization; never send
-// organization identifiers, history, extra spend, or app credentials.
+// Claude Desktop history v2 is an internal cache: send only the newest one-org sample, never identifiers.
 export function normalizeClaudeHistory(value: unknown, now = new Date()): UsageReport | undefined {
   if (!value || typeof value !== "object") throw new Error("Invalid Claude usage history");
   const history = value as { version?: unknown; samples?: unknown };

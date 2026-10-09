@@ -18,8 +18,7 @@ export interface RenderedPageSet {
   pages: Map<DisplayPageId, RenderedPage>;
 }
 
-// A shared editorial grid: 28px margins, 72px header, 40px footer.
-// Reserve solid black for readings and remaining capacity; gray is secondary.
+// Editorial grid: 28px margins, 72px header, 40px footer; black for readings, gray for secondary text.
 const ink = "#000000";
 const gray = "#555555";
 const light = "#aaaaaa";
@@ -45,8 +44,7 @@ export function renderOverview(data: DashboardData): string {
     const recent = age <= 180_000;
     const current = !!data.battery?.collectorOnline && !!reading?.connected && recent;
     const unavailable = raw === null || age >= 48 * 60 * 60_000;
-    // Bucket only presentation; preserve the raw cache for threshold decisions.
-    // Positive values below 10 must never look like an empty battery.
+    // Bucketed for display only (raw values drive thresholds); positive values under 10 never look empty.
     const value = unavailable ? null : raw < 10 && raw > 0 ? 10 : Math.round(raw / 10) * 10;
     const low = !unavailable && current && raw <= 20;
     const stale = !unavailable && !current;
@@ -129,15 +127,13 @@ function providers(data: DashboardData): Array<[string, CodexUsage | undefined]>
   return [["Codex", data.codex], ["Claude", data.claude]];
 }
 
-// No relative ages ("5m ago") or refresh clocks: they change the pixels, and so
-// the page version, on every render without any new information.
+// No relative ages or clocks: they change pixels, and so the page version, without new information.
 function usageStatus(usage: CodexUsage | undefined, timeZone: string): string {
   if (!usage?.windows.length) return "Awaiting measurement";
   return usage.collectorOnline ? "Live" : "Last reading " + formatTimestamp(usage.measuredAt, timeZone);
 }
 
-// The AI values exactly as the pages display them. It changes only when a
-// rendered AI number, bar, or reset time changes.
+// The AI values exactly as displayed; changes only when a rendered number, bar, or reset time does.
 export function aiUsageFingerprint(data: DashboardData): string {
   return JSON.stringify(providers(data).map(([name, usage]) => [name,
     (["primary", "secondary"] as const).map(id => {
@@ -231,8 +227,7 @@ function remaining(window: CodexUsageWindow): number { return percent(100 - wind
 function signed(value: number): string { return (value > 0 ? "+" : value < 0 ? "−" : "") + Math.abs(value).toFixed(2); }
 function price(value: number): string { return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function truncate(value: string, max: number): string { return value.length > max ? value.slice(0, max - 1) + "…" : value; }
-// Uses the newest market time rather than the fetch time, so a closed market
-// renders identical pixels on every refresh.
+// Newest market time, not fetch time, so a closed market renders identical pixels.
 function stockStatus(data: DashboardData): string {
   const provider = truncate(data.stockSource.provider.toUpperCase(), 16);
   const times = data.stocks.map(stock => Date.parse(stock.updatedAt)).filter(Number.isFinite);

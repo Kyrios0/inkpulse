@@ -4,8 +4,7 @@
 #include "secrets.h"
 #endif
 
-// Empty fallbacks keep CI builds secret-free. A device built with these values
-// shows a configuration message instead of attempting a network connection.
+// Empty fallbacks keep CI builds secret-free; such a device shows a configuration message instead.
 #ifndef INKPULSE_WIFI_SSID
 #define INKPULSE_WIFI_SSID ""
 #endif

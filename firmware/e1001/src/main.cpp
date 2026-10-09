@@ -24,16 +24,14 @@ constexpr int kPageCountMax = 2;
 constexpr int kLegacyCachePageCountMax = 3;
 constexpr size_t kPackedFrameBytes = (kDisplayWidth * kDisplayHeight) / 2;
 constexpr size_t kManifestBytesMax = 16 * 1024;
-// The 8 MB board partition gives LittleFS 1.5 MB. Keep space for the previous
-// previous page set while the next images are being downloaded.
+// LittleFS gets 1.5 MB on the 8 MB partition: room for the old page set while new images download.
 constexpr size_t kPngBytesMax = 192 * 1024;
 constexpr uint32_t kWifiTimeoutMs = 20000;
 constexpr uint32_t kClockTimeoutMs = 20000;
 constexpr uint32_t kButtonDebounceMs = 45;
 constexpr uint32_t kMinimumRefreshSeconds = 30;
 constexpr uint32_t kMaximumRefreshSeconds = 86400;
-// A button press marks someone as present at the device for this long, which
-// overrides the server's away hold.
+// A button press counts as presence at the device for this long, overriding the server's away hold.
 constexpr uint32_t kLocalPresenceMs = 5UL * 60UL * 1000UL;
 // Shortest accepted away redraw interval; 0 from the manifest means fully held.
 constexpr uint32_t kMinimumAwayRedrawSeconds = 600;
@@ -126,8 +124,7 @@ uint32_t fullRedraws = 0;
 uint32_t partialRedraws = 0;  // reserved: this firmware refreshes full-screen only
 uint32_t sessionFullRedraws = 0;
 uint32_t sessionHeldPolls = 0;
-// millis() of the last physical refresh. Boot counts as one, since the panel's
-// real last refresh time is unknown after a restart.
+// millis() of the last physical refresh; boot counts as one since the real time is unknown.
 uint32_t lastPanelRefreshAt = 0;
 
 ButtonState refreshButton{kPinRefresh};
@@ -207,8 +204,7 @@ void refreshPanel(RedrawReason reason, const String &detail = "") {
              static_cast<unsigned long>(sessionFullRedraws));
 }
 
-// Records what the panel shows so a reboot can skip redrawing the same page.
-// An empty page ID means a non-page screen (status or diagnostic).
+// Lets a reboot skip redrawing a page already shown; an empty ID means a status or diagnostic screen.
 void rememberShown(const String &pageId, const String &version) {
   putStringIfChanged("shownPage", pageId);
   putStringIfChanged("shownVer", version);
@@ -685,10 +681,7 @@ bool refreshPageSet() {
   if (selectedIndex >= 0) {
     const PageRecord &selected = cachedPages.pages[selectedIndex];
     if (displayedPageId != selected.id || displayedVersion != selected.version) {
-      // While the server reports nobody at the PC, keep caching but leave the
-      // panel alone. A page must already be on screen: never hold a status or
-      // diagnostic screen, and never hold for someone at the device.
-      // A changed page may still be shown once per away interval.
+      // Away: keep caching but don't redraw (except once per away interval); never hold a status screen or a button user.
       const bool awayIntervalDue =
           remote.awayRedrawSeconds > 0 &&
           millis() - lastPanelRefreshAt >= remote.awayRedrawSeconds * 1000UL;
@@ -784,8 +777,7 @@ void setup() {
              static_cast<unsigned long>(boots), static_cast<unsigned long>(fullRedraws),
              static_cast<unsigned long>(partialRedraws));
 
-  // Format only on the first boot of a fresh partition. A later mount failure
-  // must not erase potentially recoverable cached pages.
+  // Format only a fresh partition; a later mount failure must not erase recoverable cached pages.
   const bool wasInitialized = preferences.getBool("fsReady", false);
   storageReady = LittleFS.begin(!wasInitialized);
   if (!storageReady) {
@@ -811,8 +803,7 @@ void setup() {
     const int selectedIndex = findPage(cachedPages, selectedPageId);
     if (selectedIndex >= 0) {
       const PageRecord &selected = cachedPages.pages[selectedIndex];
-      // E-paper keeps its image without power. If NVS says this exact page
-      // version is already on the panel, adopt it instead of redrawing.
+      // E-paper keeps its image unpowered: if NVS says this version is shown, adopt it instead of redrawing.
       if (preferences.getString("shownPage", "") == selected.id &&
           preferences.getString("shownVer", "") == selected.version) {
         displayedPageId = selected.id;

@@ -25,9 +25,7 @@ export interface ServerOptions {
   aiIngestToken?: string;
   onAiUsage?: (provider: "codex" | "claude", report: CodexUsageReport) => Promise<void>;
   onBattery?: (report: BatteryReport) => Promise<void>;
-  // Called once per accepted collector post, after onAiUsage/onBattery have
-  // run for every part, with its activity block if sent. It is awaited, so the
-  // post is acknowledged only after any resulting render has completed.
+  // Awaited once per post after every part is handled, so the 204 follows any resulting render.
   onCollectorPost?: (activity: ActivityReport | undefined) => void | Promise<void>;
   presence?: () => PresenceState;
   awayRedrawSeconds?: number;

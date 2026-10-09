@@ -115,8 +115,7 @@ function normalizeMetricsUrl(value: string): string {
   if (path !== "/api/v1/metrics" && path !== "/api/v1/metrics/codex" && path !== "/api/v1/metrics/ai") {
     throw new Error("AI ingest URL must end in /api/v1/metrics or its Codex/AI route");
   }
-  // The existing Nginx ingress exposes /codex; a bare base URL uses it until
-  // an explicit /ai route is deployed. Both accept the same combined payload.
+  // Nginx exposes /codex, so a bare base URL uses it; /ai accepts the same combined payload.
   url.pathname = path === "/api/v1/metrics" ? `${path}/codex` : path;
   return url.toString().replace(/\/$/, "");
 }

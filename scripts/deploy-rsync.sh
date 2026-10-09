@@ -97,8 +97,7 @@ rollback() {
 trap rollback ERR
 
 cd "$current_link"
-# PM2 reload retains the previous release's absolute script path. Start a new
-# process from the updated symlink so code changes reach the live service.
+# PM2 reload keeps the old release's script path, so start a fresh process from the updated symlink.
 pm2 delete inkpulse >/dev/null 2>&1 || true
 pm2 start ecosystem.config.cjs --env production
 

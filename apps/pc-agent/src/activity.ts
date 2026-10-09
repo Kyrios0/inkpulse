@@ -3,11 +3,7 @@ import { createInterface, type Interface } from "node:readline";
 
 import type { ActivityReport } from "../../../packages/contracts/src/activity.js";
 
-// Windows-only helper: one hidden PowerShell process compiles a tiny P/Invoke
-// shim once, then answers "<idleSeconds> <locked>" for every request line.
-// GetLastInputInfo only sees input for the interactive session it runs in, so
-// the collector task must run as the signed-in user, not as a service.
-// Session flags: WTSINFOEXW.Data (8-byte aligned union) + SessionId + State.
+// Windows-only: one hidden PowerShell answers "<idleSeconds> <locked>" per line; it must run in the user session.
 const helperScript = String.raw`
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @"
@@ -28,7 +24,7 @@ public static class InkPulseActivity {
     if (!WTSQuerySessionInformationW(IntPtr.Zero, -1, 25, out buffer, out bytes)) return -1;
     try {
       if (bytes < 20 || Marshal.ReadInt32(buffer, 0) != 1) return -1;
-      int flags = Marshal.ReadInt32(buffer, 16);
+      int flags = Marshal.ReadInt32(buffer, 16); // WTSINFOEXW: Level, then 8-byte-aligned SessionId, State, Flags.
       return flags == 0 ? 1 : flags == 1 ? 0 : -1;
     } finally { WTSFreeMemory(buffer); }
   }
@@ -46,8 +42,7 @@ interface LocalActivity {
 }
 
 export function parseActivityLine(line: string): LocalActivity | undefined {
-  // -1 idle means GetLastInputInfo failed. An unknown lock state (-1) falls
-  // back to idle time alone.
+  // -1 idle (GetLastInputInfo failed) is rejected; an unknown lock state (-1) falls back to idle time.
   const match = /^(\d+) (-?1|0)$/.exec(line.trim());
   return match ? { idleSeconds: Number(match[1]), locked: match[2] === "1" } : undefined;
 }
@@ -80,9 +75,7 @@ export class ActivityProbe {
     }
   }
 
-  // Resolves undefined when activity is unavailable (non-Windows, helper
-  // failure). Only a coarse state is returned for upload; raw values never
-  // leave this process or appear in logs.
+  // Undefined when unavailable (non-Windows, helper failure); raw idle/lock values never leave this process.
   async read(): Promise<ActivityReport | undefined> {
     if (process.platform !== "win32") return undefined;
     try {

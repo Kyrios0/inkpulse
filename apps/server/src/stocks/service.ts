@@ -10,8 +10,7 @@ export interface StockState {
 
 export class StockService {
   private snapshot: StockCacheSnapshot | undefined;
-  // Last refresh with no failed symbol. A lone transient failure must not
-  // toggle the rendered STALE label (and force a panel redraw) twice.
+  // Last refresh with no failed symbol; one transient failure must not toggle STALE (two redraws).
   private lastCompleteAt: number | undefined;
 
   constructor(

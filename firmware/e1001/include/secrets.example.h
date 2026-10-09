@@ -1,7 +1,6 @@
 #pragma once
 
-// Copy this file to secrets.h. The copied file is ignored by Git.
-// E1001 Wi-Fi is 2.4 GHz only.
+// Copy to secrets.h (ignored by Git). E1001 Wi-Fi is 2.4 GHz only.
 #define INKPULSE_WIFI_SSID "your-2.4-ghz-wifi"
 #define INKPULSE_WIFI_PASSWORD "your-wifi-password"
 

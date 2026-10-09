@@ -5,8 +5,7 @@ export interface PresenceOptions {
   enabled: boolean;
   // No collector post for this long means the PC is asleep, off, or offline.
   collectorOfflineSeconds: number;
-  // A changed AI usage reading releases the hold for this long, so a device
-  // polling at its normal interval sees it at least once.
+  // How long a changed AI reading releases the hold, so a polling device sees it at least once.
   aiReleaseSeconds: number;
 }
 
@@ -21,8 +20,7 @@ export const defaultPresenceOptions: PresenceOptions = {
   aiReleaseSeconds: 180,
 };
 
-// Tracks only the coarse PC classification, in memory. Missing activity is
-// treated as present while posts continue (old or non-Windows collectors).
+// Tracks only the coarse PC state, in memory; missing activity counts as present while posts continue.
 export class PresenceTracker {
   private lastPostAt: number | undefined;
   private away = true;
@@ -40,8 +38,7 @@ export class PresenceTracker {
     // "transition" retains the prior state for hysteresis.
   }
 
-  // Called with the displayed AI values after every render. Only a change in
-  // what the pages show counts; collector online/offline labels do not.
+  // Only a change in the displayed AI values counts; online/offline labels do not.
   recordAiFingerprint(fingerprint: string, now = Date.now()): void {
     if (this.aiFingerprint !== undefined && fingerprint !== this.aiFingerprint) {
       this.aiChangedAt = now;

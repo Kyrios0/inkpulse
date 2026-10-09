@@ -1,3 +1,5 @@
+import { isIsoDate, isRecord } from "./validate.js";
+
 export interface CodexUsageWindow {
   id: "primary" | "secondary";
   label: string;
@@ -14,10 +16,7 @@ export interface CodexUsageReport {
 }
 
 export function parseCodexUsageReport(value: unknown): CodexUsageReport {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Invalid Codex usage report root");
-  }
-
+  if (!isRecord(value)) throw new Error("Invalid Codex usage report root");
   const report = value as Partial<CodexUsageReport>;
   if (
     report.schemaVersion !== 1 ||
@@ -48,7 +47,7 @@ function isTimeZone(value: unknown): value is string {
 }
 
 function isUsageWindow(value: unknown): value is CodexUsageWindow {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!isRecord(value)) return false;
   const window = value as Partial<CodexUsageWindow>;
   return (
     (window.id === "primary" || window.id === "secondary") &&
@@ -65,8 +64,4 @@ function isUsageWindow(value: unknown): value is CodexUsageWindow {
         window.windowDurationMinutes > 0)) &&
     (window.resetsAt === null || isIsoDate(window.resetsAt))
   );
-}
-
-function isIsoDate(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
 }

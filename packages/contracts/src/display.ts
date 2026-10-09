@@ -26,8 +26,7 @@ export interface DisplayManifest {
   // Additive schema-1 fields; older firmware ignores them.
   presence: DisplayPresence;
   holdRedraws: boolean;
-  // While held, the device may still redraw a changed page once per this many
-  // seconds since its last panel refresh. 0 means fully held.
+  // While held, a changed page may still redraw once per this many seconds; 0 means fully held.
   awayRedrawSeconds: number;
   pages: DisplayPageDescriptor[];
 }

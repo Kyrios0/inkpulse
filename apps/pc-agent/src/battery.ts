@@ -21,9 +21,7 @@ export function parseBatteryConfig(value: unknown): BatteryDeviceConfig[] {
   return devices;
 }
 
-// Query existing Windows state only: no UI, pairing, GATT connection attempts,
-// or vendor APIs. System-class Hands-Free nodes hold the live values; the
-// Bluetooth-class LE node can retain a different, obsolete percentage.
+// Read existing Windows state only (no pairing or GATT); System-class Hands-Free nodes hold live values.
 const helperScript = String.raw`
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
