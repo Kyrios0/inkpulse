@@ -1,23 +1,25 @@
 # E1001 display protocol
 
-## Image profile
+## API and images
 
-InkPulse v1 renders one image per page with these properties:
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | Public service health |
+| `GET /api/v1/display/manifest` | Page versions and redraw policy |
+| `GET /api/v1/display/pages/:pageId.png` | Latest rendered image |
+| `PUT /api/v1/metrics/codex` | Combined collector upload; legacy ingress name |
 
-- Width: 800 pixels
-- Height: 480 pixels
-- Format: PNG
-- Palette: four grayscale values (black, dark gray, light gray, white)
-- Orientation: landscape
+Display requests use a read-only `Authorization: Bearer` token, separate from the
+collector's write token. Never put tokens in URLs. Firmware validates TLS with
+ISRG Root X1/X2, rejects redirects, and accepts only relative image URLs matching
+the declared page's route.
 
-The server performs layout, font rendering, graph drawing, and grayscale
-quantization. Firmware only decodes the image into the panel buffer.
+Pages are landscape 800 × 480 PNGs with four grayscale levels. The server renders;
+firmware decodes. Wire IDs are `overview`, `stocks`, and `codex` (AI usage).
 
 ## Manifest
 
-The device requests `GET /api/v1/display/manifest` with its read-only bearer
-token. A version 1 response has this shape (one page shown; actual responses
-include `overview`, `stocks`, and `codex`):
+Schema 1 example, showing one of the three pages:
 
 ```json
 {
@@ -28,130 +30,61 @@ include `overview`, `stocks`, and `codex`):
   "presence": "present",
   "holdRedraws": false,
   "awayRedrawSeconds": 3600,
-  "pages": [
-    {
-      "id": "overview",
-      "title": "Overview",
-      "version": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      "imageUrl": "/api/v1/display/pages/overview.png?v=sha256%3A0000000000000000000000000000000000000000000000000000000000000000",
-      "width": 800,
-      "height": 480,
-      "format": "png",
-      "updatedAt": "2026-09-21T12:00:00Z"
-    }
-  ]
+  "pages": [{
+    "id": "overview",
+    "title": "Overview",
+    "version": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "imageUrl": "/api/v1/display/pages/overview.png?v=sha256%3A0000000000000000000000000000000000000000000000000000000000000000",
+    "width": 800,
+    "height": 480,
+    "format": "png",
+    "updatedAt": "2026-09-21T12:00:00Z"
+  }]
 }
 ```
 
-`version` changes only when that page's pixels change. The device compares it
-with its cached version and skips unchanged downloads. Page image responses
-also provide an `ETag` and support `If-None-Match`.
+Versions hash PNG bytes; unchanged images skip downloads. Responses support
+`ETag`/`If-None-Match`. Only the latest page set is served: an old version URL
+may return new bytes, so firmware rejects digest mismatches and retries.
 
-Only a changed selected page can trigger a panel refresh, subject to the hold
-policy. Pages avoid pixels that change without new information:
+## Presence and redraw hold
 
-- the header shows the date, not a clock;
-- the stock footer shows the newest market quote time, not the fetch time, so
-  unchanged closed-market quotes do not cause fetch-time-driven redraws;
-- AI status reads `Live` or `Last reading <time>`, never a relative age;
-  `Live` means the source reading is recent, not that the user is active;
-- AI percentages are whole numbers, so every 1 % change still appears;
-- battery display uses 10% buckets and fixed stale labels, not ticking ages;
-  disconnected readings remain gray with their observation timestamp until
-  48 hours old, then display a dash. Battery changes do not release the AFK hold;
-- `STALE` appears only after stock refreshes have failed for two refresh
-  intervals, not after one transient symbol failure.
+These additive schema-1 fields are ignored by older firmware:
 
-### Presence and redraw hold
+- `presence`: `present`, `away`, or `unknown` when tracking is disabled.
+- `holdRedraws`: hold changed pages while away, except a 180-second window after
+  displayed AI values change (`INKPULSE_AI_RELEASE_SECONDS`). Batteries do not release it.
+- `awayRedrawSeconds`: permit a changed page after 3600 seconds since the last
+  redraw by default; `0` disables this periodic exception.
 
-`presence`, `holdRedraws`, and `awayRedrawSeconds` are additive schema-1
-fields; firmware that does not know them ignores them.
+PC defaults: locked or ≥600 seconds idle means away; input within 120 seconds
+means present; intermediate `transition` preserves the prior state.
+Set `INKPULSE_AWAY_AFTER_IDLE_SECONDS`/`INKPULSE_PRESENT_WITHIN_SECONDS` on the PC.
 
-- `presence` is `present`, `away`, or `unknown` (tracking disabled with
-  `INKPULSE_PRESENCE_HOLD=off`).
-- `holdRedraws` asks the device not to redraw the panel for new page versions.
-  It is `true` while `presence` is `away`, except for a short window
-  (`INKPULSE_AI_RELEASE_SECONDS`, default 180) after the displayed AI usage
-  values change, so work that continues while the user is away still appears.
-- `awayRedrawSeconds` (`INKPULSE_AWAY_REDRAW_SECONDS`, default 3600) lets a
-  held device still show a changed page once that many seconds have passed
-  since its last panel refresh, so an unattended display stays roughly current
-  (for example stock moves during US market hours). `0` keeps the panel fully
-  held until someone returns.
+The server starts away, then marks a posting collector without activity data
+present. No post for 180 seconds means away (`INKPULSE_COLLECTOR_OFFLINE_SECONDS`,
+capped at the Codex stale threshold). `INKPULSE_PRESENCE_HOLD=off` disables tracking.
+Only coarse `activity: {"presence":"present"}` crosses the network; exact idle/lock
+details stay local. Server presence is memory-only; activity-only batches are valid.
 
-The PC classifies input locally. `away` means idle for at least
-`INKPULSE_AWAY_AFTER_IDLE_SECONDS` (default 600) or locked; `present` means
-input within `INKPULSE_PRESENT_WITHIN_SECONDS` (default 120); `transition`
-keeps the previous state. Configure these thresholds on the PC. The gap is
-hysteresis: short breaks do not flap the state. The server also marks the PC
-away after `INKPULSE_COLLECTOR_OFFLINE_SECONDS` without a post (default 180,
-never longer than the Codex stale threshold). A collector with no activity
-signal is treated as present while it posts; after a server restart presence
-starts as `away` until the first collector post.
+Any button overrides holds for five minutes. Left/right navigate cached pages;
+Refresh checks the server, not the upstream stock provider. Device polling
+(`refreshAfterSeconds`) is independent of stock fetching.
 
-Only the coarse state crosses the PC/VPS boundary as an optional `activity`
-object in the write-token AI usage batch (`{"presence":"present"}`); a batch
-may carry activity with no usage reports. Exact idle seconds and lock state
-never leave the PC. The server retains the coarse state only in memory and
-the display manifest exposes only the derived fields.
+## Cache and panel updates
 
-`refreshAfterSeconds` controls device checks, not the server's stock-provider
-schedule. Keeping these settings independent allows a battery-powered display
-to wake less often without making the server cache equally stale.
+1. Fetch/validate the manifest and download changed images.
+2. Verify PNG signature, dimensions, and SHA-256; commit the LittleFS page set
+   only after every changed page passes.
+3. Draw the selected page if needed and permitted. Holds never hide the initial
+   page; held updates remain cached until a button, interval exception, or release.
+4. On failure, keep the existing cache and image; retry on the next check.
 
-## Button behavior
+Navigation works offline. NVS records the displayed page/version to skip redundant
+boot redraws. Current firmware stays awake and uses full four-gray refreshes only.
 
-- **Left:** display the previous cached page, wrapping at the beginning.
-- **Right:** display the next cached page, wrapping at the end.
-- **Refresh:** fetch the manifest, download changed pages, and redraw the
-  selected page if necessary.
-
-Any button press also counts as someone present at the device for five
-minutes; during that time the device ignores `holdRedraws`.
-
-Navigation is local. It must continue working when Wi-Fi or the VPS is down.
-The selected page is persisted so a restart does not unexpectedly
-return the user to the overview.
-
-## Refresh behavior
-
-1. Ensure connection to the configured Wi-Fi network; current firmware stays awake.
-2. Request the manifest with a short timeout.
-3. Validate the schema, page dimensions, format, and allowed URL origin.
-4. Download changed images to temporary files or buffers.
-5. Validate each complete image before replacing its cached predecessor.
-6. Display the selected page if its version changed, unless `holdRedraws` is
-   true, no button was pressed in the last five minutes, a page is already on
-   screen, and the last panel refresh is more recent than
-   `awayRedrawSeconds`. Held pages stay cached; the newest selected page is
-   drawn once when the hold ends.
-7. Wait until the next scheduled refresh or button press. A later battery-mode
-   firmware can deep sleep between checks.
-
-On any failure, the device keeps its current image and cached page set.
-
-The E1001 implementation stores versioned PNG files in LittleFS and
-commits new metadata only after every changed page has passed its PNG signature
-and 800 x 480 dimension checks. It uses full four-gray panel refreshes; unchanged
-versions do not refresh the physical display. After a reboot it redraws only
-if the panel does not already show the selected page's cached version, which
-it records in NVS after every refresh.
-The downloaded file's SHA-256 digest must match the manifest version before it
-can enter the cache. This also handles a page that changes between the manifest
-and image requests.
-
-The server retains the latest page set, not an archive of all versions. A stale
-version URL can return newer bytes; firmware rejects the mismatched digest and
-retries with a fresh manifest. Date changes and freshness transitions may also
-change images even when numeric readings stay the same.
-
-## Authentication
-
-The display token grants read-only access to display endpoints. It is separate
-from the PC collector's write credential. The firmware sends it in the
-`Authorization: Bearer` header; it is never placed in an image URL or query
-string where it could appear in access logs.
-
-HTTPS certificate validation uses the ISRG Root X1 and X2 trust anchors. The
-firmware rejects redirects and accepts only relative image URLs matching the
-display-page route for the declared page ID.
+Headers show dates, stock footers quote times, and stale labels fixed timestamps,
+not ticking clocks. AI percentages use 1% steps; batteries use 10% buckets
+([source rules](data-sources.md)). Stock `STALE` follows prolonged fetch failures
+(two refresh intervals since the last complete success). Date/freshness changes
+can alter images even when numeric values do not.
