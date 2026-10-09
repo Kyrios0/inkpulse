@@ -2,6 +2,8 @@
 
 An e-ink dashboard for device batteries, AI usage, and US stocks on a Seeed reTerminal E1001, crafted with GPT/Claude.
 
+![Overview preview](docs/previews/overview.png)
+
 ```sh
 npm install
 npm test                 # build and test; no credentials or hardware needed
@@ -25,10 +27,6 @@ Stocks keep updating while the PC is off; AI and battery readings keep their las
 
 Left/Right switch cached pages; Refresh checks the server. Unchanged images never redraw, and AFK holds
 cut redraws further. The firmware stays awake and is meant for USB power.
-
-![Overview preview](docs/previews/overview.png)
-
-Synthetic data; regenerate with `npm run render:docs`.
 
 ## Configure
 
@@ -55,3 +53,7 @@ Copy settings from [.env.example](.env.example) into ignored local files; never 
 - [Architecture](docs/architecture.md): components, failures, security
 - [E1001 firmware](firmware/e1001/README.md): build, flash, buttons, refresh counters
 - [Battery-life estimates](docs/battery-life.md): planning numbers for future sleep firmware
+
+## License
+
+[MIT](LICENSE)

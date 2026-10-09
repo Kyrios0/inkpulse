@@ -54,9 +54,10 @@ sign-in without admin rights.
 
 ## Monitoring
 
-Set repository variable `INKPULSE_PUBLIC_BASE_URL` and secret `INKPULSE_MONITOR_DEVICE_TOKEN` (read-only)
-to enable the five-minute GitHub monitor; without the URL it skips. It checks health, auth, manifest
-freshness, both PNGs, ETags, and revalidation, and never needs the write token.
+Set repository secrets `INKPULSE_PUBLIC_BASE_URL` and `INKPULSE_MONITOR_DEVICE_TOKEN` (read-only) to
+enable the five-minute GitHub monitor; without the URL every step skips, and as a secret the host stays out
+of public logs. It checks health, auth, manifest freshness, both PNGs, ETags, and revalidation, and never
+needs the write token.
 
 ## Two-page upgrade
 

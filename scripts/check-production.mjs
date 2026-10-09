@@ -1,4 +1,6 @@
 const baseUrl = parseBaseUrl(requiredEnvironmentVariable("INKPULSE_PUBLIC_BASE_URL"));
+// GitHub masks the full secret URL only; also mask the bare hostname that DNS/TLS errors print.
+if (process.env.GITHUB_ACTIONS) console.log(`::add-mask::${baseUrl.hostname}`);
 const deviceToken = requiredEnvironmentVariable("INKPULSE_MONITOR_DEVICE_TOKEN");
 const maximumAgeSeconds = parsePositiveInteger(
   process.env.INKPULSE_MONITOR_MAX_AGE_SECONDS ?? "900",
