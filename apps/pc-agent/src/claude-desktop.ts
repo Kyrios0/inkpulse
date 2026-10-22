@@ -52,19 +52,30 @@ export async function readClaudeUsage(): Promise<UsageReport | undefined> {
 async function discoverPaths(): Promise<string[]> {
   if (process.platform === "win32") {
     const paths = [join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "Claude", "plan-usage-history.json")];
-    const packages = join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "Packages");
-    try {
-      for (const entry of await readdir(packages, { withFileTypes: true })) {
-        if (entry.isDirectory() && entry.name.startsWith("Claude_")) {
-          paths.push(join(packages, entry.name, "LocalCache", "Roaming", "Claude", "plan-usage-history.json"));
-        }
+    const localAppData = process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local");
+    const packages = join(localAppData, "Packages");
+    for (const entry of await listDirectories(packages)) {
+      if (entry.startsWith("Claude_")) {
+        paths.push(join(packages, entry, "LocalCache", "Roaming", "Claude", "plan-usage-history.json"));
       }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    // Newer Desktop builds move user data out of the MSIX container into Claude-Data\claude_<package id>.
+    const dataRoot = join(localAppData, "Claude-Data");
+    for (const entry of await listDirectories(dataRoot)) {
+      if (entry.startsWith("claude_")) paths.push(join(dataRoot, entry, "plan-usage-history.json"));
     }
     return paths;
   }
   return [process.platform === "darwin"
     ? join(homedir(), "Library", "Application Support", "Claude", "plan-usage-history.json")
     : join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "Claude", "plan-usage-history.json")];
+}
+
+async function listDirectories(path: string): Promise<string[]> {
+  try {
+    return (await readdir(path, { withFileTypes: true })).filter(e => e.isDirectory()).map(e => e.name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }

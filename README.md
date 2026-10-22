@@ -36,7 +36,8 @@ Copy settings from [.env.example](.env.example) into ignored local files; never 
 
 1. **Server:** set 1–12 `INKPULSE_STOCK_SYMBOLS` (no default) and two distinct tokens, display and AI ingest.
 2. **PC:** set the ingest URL and token; optionally copy [battery.example.json](config/battery.example.json)
-   to `config/battery.local.json`. Batteries and AFK detection need native Windows.
+   to `config/battery.local.json`. The PC collector currently supports Windows only: batteries and presence
+   use Windows APIs, and only the Windows Claude Desktop cache path is verified.
 3. **E1001:** set Wi-Fi, the HTTPS origin, and the display token ([firmware guide](firmware/e1001/README.md)).
 
 ## Limits
